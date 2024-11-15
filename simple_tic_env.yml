@@ -1,0 +1,13 @@
+name: tic_algorithm_env
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.10
+  - biopython
+  - scikit-learn
+  - numpy
+  - tqdm
+  - pip
+  - pip:
+      - joblib
