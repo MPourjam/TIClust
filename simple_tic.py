@@ -11,25 +11,30 @@ import subprocess
 class Taxonomy:
 
     output_delimiter = '___'
-    level_tax_map = {
-        'kingdom': 0,
-        'phylum': 1,
-        'class': 2,
-        'order': 3,
-        'family': 4,
-        'genus': 5,
-        'species': 6,
-        'ZOTU': 7
-    }
+    delimiter = ';'  # Default delimiter for taxonomy
+    tax_regex = re.compile(r"tax=(?P<tax>([^;]+;)*[^;]+;?)$", re.IGNORECASE)
+    level_tax_map = [
+        'kingdom',
+        'phylum',
+        'class',
+        'order',
+        'family',
+        'genus',
+        'species',
+        'ZOTU'
+    ]
 
-    def __init__(self, tax_str: str, delimiter: str = ';'):
-        self.tax_str = tax_str
-        self.tax_list = self.parse_taxonomy(delimiter)
-        self.delimiter = delimiter
-        pass
+    def __init__(self, tax_str: str):
+        tax_reg_match = self.tax_regex.search(tax_str)
+        if tax_reg_match:
+            self.tax_str = tax_reg_match.group('tax')
+        else:
+            self.tax_str = ''
+        self.tax_list = self.parse_taxonomy(self.delimiter)
 
-    def parse_taxonomy(self, delimiter: str) -> List[str]:
-        return self.tax_str.split(delimiter)
+    def parse_taxonomy(self, delimiter: str = None) -> List[str]:
+        delimiter = delimiter if delimiter else self.delimiter
+        return self.tax_str.split(delimiter) if self.tax_str else []
 
     @property
     def kingdom(self):
@@ -60,114 +65,219 @@ class Taxonomy:
         return self._get_level('species')
 
     def _get_level(self, level: str):
-        tax_level_ind = self.level_tax_map[level]
-        return self.tax_list[tax_level_ind] if len(self.tax_list) > tax_level_ind else f'NA_{str(level).capitalize()}'
+        tax_level_ind = self.level_tax_map.index(level)
+        if len(self.tax_list) > tax_level_ind:
+            return self.tax_list[tax_level_ind]
+        return f'NA-{str(level).capitalize()}'
 
     def get_tax_upto(self, level: str):
-        tax_level_ind = self.level_tax_map[level] + 1
+        tax_level_ind = self.level_tax_map.index(level) + 1
         sliced_tax = []
         for lev in range(tax_level_ind):
-            sliced_tax.append(self._get_level(lev))
+            cur_level = self.level_tax_map[lev]
+            sliced_tax.append(self._get_level(cur_level))
         return "___".join(sliced_tax)
 
     def __repr__(self):
-        return self.tax_str.replace(self.delimiter, self.output_delimiter)
+        return self.get_tax_upto('ZOTU').replace(self.delimiter, self.output_delimiter)
 
     def __str__(self):
         return self.__repr__()
 
 
+class SeqID:
+
+    seq_id_regex = re.compile(r"^(?P<seq_header>>\S+)\s*.*$", re.IGNORECASE)
+
+    def __init__(self, header: str):
+        seq_id_match = self.seq_id_regex.match(header)
+        if not seq_id_match:
+            raise ValueError(f"Incorrect header format for {seq_id_match}")
+        self.head_id = str(seq_id_match.group('seq_header'))
+
+    def __repr__(self):
+        return self.head_id
+
+    def __str__(self):
+        return self.__repr__()
+
+
+class SeqHeader:
+
+    def __init__(self, header: str):
+        self.seq_id = SeqID(header)
+        self.taxonomy = Taxonomy(header)
+        self.header = str(self.seq_id) + ' ' + str(self.taxonomy)
+
+    def __repr__(self):
+        return self.header
+
+    def __str__(self):
+        return self.__repr__()
+
+    def __hash__(self):
+        return hash(self.header)
+
+
 class Sequence:
 
-    seq_header_regex = re.compile(r"^>$")
-    seq_content_regex = re.compile(r"^[ACUGTN]+$")
+    seq_header_regex = re.compile(r"^>")
+    # NOTE in some SILVA entries there are 'K' 'M', and 'N' characters in the sequence
+    seq_content_regex = re.compile(r"^[A-Z]+$", re.IGNORECASE)
 
     def __init__(self, header: str, sequence: str):
-        self.header = header
+        self.header = SeqHeader(header)
         self.sequence = sequence
-        if not self.is_header_correct(header):
-            raise ValueError(f"Incorrect header format for {self.header}")
-        if not self.is_sequence_correct(sequence):
-            raise ValueError(f"Incorrect sequence format for {self.header}")
+        if not self.is_sequence_correct():
+            raise ValueError(f"Incorrect sequence format for \n{self.header}\n{self.sequence}\n")
 
     def is_header_correct(self, header_regex: re.Pattern = None) -> bool:
         header_regex_to_check = header_regex if header_regex else self.seq_header_regex
-        return bool(header_regex_to_check.match(self.header))
+        return bool(header_regex_to_check.match(str(self.header)))
 
     def is_sequence_correct(self) -> bool:
         return bool(self.seq_content_regex.match(self.sequence))
 
     def __hash__(self):
-        return hash((self.header, self.sequence.lower()))
+        return hash((str(self.header), self.sequence.lower()))
 
+    def __repr__(self):
+        return f"{self.header.seq_id} {self.sequence[:7]}...{self.sequence[-7:]}"
 
-class ZOTU(Sequence):
-    zotus_header_regex = re.compile(r"^>(?P<zotu_id>Zotu[0-9]+).*tax=(?P<tax>([^;]+;){7,8});?", re.IGNORECASE)
-
-    def __init__(self, header: str, sequence: str):
-        super().__init__(header, sequence)
-        if not self.is_header_correct(header):
-            raise ValueError(f"Incorrect header format for {self.header}")
-        self.taxonomy = Taxonomy(self._get_taxonomy())
-        self.zotu_id = self._get_zotu_id()
-
-    def _get_taxonomy(self) -> str:
-        parsed_tax_match = self.zotus_header_regex.match(self.header).group('tax')
-        return str(parsed_tax_match)
-
-    def is_header_correct(self, header) -> bool:
-        return bool(self.zotus_header_regex.match(header))
-
-    def __hash__(self) -> int:
-        return super().__hash__()
+    def __str__(self):
+        return self.__repr__()
 
 
 class ZOTUFASTA:
 
     def __init__(self, fasta_file: pl.Path):
-        self.fasta_file = fasta_file
+        self.fasta_file = fasta_file.absolute()
         pass
+
+    def get_taxonomies(self) -> List[Tuple[SeqID, Taxonomy]]:
+        taxonomies = []
+        with open(self.fasta_file, 'r', encoding='utf-8') as fasta:
+            for line in fasta:
+                if line.startswith('>'):
+                    taxonomies.append(Taxonomy(line))
+        return taxonomies
+
+    def get_hash_table(self) -> Dict[int, str]:
+        # NOTE suprisingly, this does not help reduce memory usage as compared to get_sequences()
+
+        hash_table = {}
+        with open(self.fasta_file, 'r', encoding='utf-8') as fasta:
+            curr_line = fasta.readline().strip()
+            seq_str = ''
+            seq_header = ''
+            header_no = 0
+            while curr_line:
+                if curr_line.startswith('>'):
+                    if seq_str:
+                        seq_obj = Sequence(seq_header, seq_str)
+                        seq_obj_hash = header_no
+                        hash_table[seq_obj_hash] = seq_obj.header
+                        seq_str = ''
+                    seq_header = curr_line
+                    header_no += 1
+                else:
+                    seq_str += curr_line
+                curr_line = fasta.readline().strip()
+            if seq_str:
+                seq_obj = Sequence(seq_header, seq_str)
+                seq_obj_hash = hash(seq_obj)
+                hash_table[seq_obj_hash] = seq_obj.header
+        return hash_table
+
+    def get_sequences(self) -> List[Sequence]:
+        sequences = []
+        with open(self.fasta_file, 'r', encoding='utf-8') as fasta:
+            curr_line = fasta.readline().strip()
+            seq_str = ''
+            seq_header = ''
+            while curr_line:
+                if curr_line.startswith('>'):
+                    if seq_str:
+                        seq_obj = Sequence(seq_header, seq_str)
+                        sequences.append(seq_obj)
+                        seq_str = ''
+                    seq_header = curr_line
+                else:
+                    seq_str += curr_line
+                curr_line = fasta.readline().strip()
+            if seq_str:
+                seq_obj = Sequence(seq_header, seq_str)
+                sequences.append(seq_obj)
+        return sequences
+
+    def filter_sequences(self, hash_list: List[int]) -> List[Sequence]:
+        """
+        It returns a list of sequence objects whose hash values are in the hash_list.
+        """
+        sequences = []
+        with open(self.fasta_file, 'r', encoding='utf-8') as fasta:
+            curr_line = fasta.readline().strip()
+            seq_str = ''
+            seq_header = ''
+            while curr_line:
+                if curr_line.startswith('>'):
+                    if seq_str:
+                        seq_obj = Sequence(seq_header, seq_str)
+                        seq_obj_hash = hash(seq_obj)
+                        if seq_obj_hash in hash_list:
+                            sequences.append(seq_obj)
+                        seq_str = ''
+                    seq_header = curr_line
+                else:
+                    seq_str += curr_line
+                curr_line = fasta.readline().strip()
+            if seq_str:
+                seq_obj = Sequence(seq_header, seq_str)
+                seq_obj_hash = hash(seq_obj)
+                if seq_obj_hash in hash_list:
+                    sequences.append(seq_obj)
+        return sequences
 
 
 class Species:
 
-    def __init__():
+    def __init__(self):
         pass
 
 
 class Genus:
 
-    def __init__():
+    def __init__(self):
         pass
 
 
 class Family:
 
-    def __init__():
+    def __init__(self):
         pass
 
 
 class Order:
 
-    def __init__():
+    def __init__(self):
         pass
 
 
 class Class:
 
-    def __init__():
+    def __init__(self):
         pass
 
 
 class Phylum:
 
-    def __init__():
+    def __init__(self):
         pass
 
 
 class Kingdom:
 
-    def __init__():
+    def __init__(self):
         pass
 
 
@@ -179,7 +289,7 @@ class UClust:
 
     def __init__(
             self,
-            zotus: List[ZOTU],
+            zotus: List[Sequence],
             sim_threshold: float,
             uclust_bin: str = 'uclust',
             threads: int = 1,
@@ -190,7 +300,6 @@ class UClust:
         self.threads = threads
         self.uclust_work_dir = pl.Path(pl.PurePath(uclust_work_dir)).absolute()
         pass
-        # TODO
 
     def gather_zotus(self) -> pl.Path:
         pass
