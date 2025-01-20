@@ -4,10 +4,9 @@
 # pylint: disable=too-few-public-methods
 # pylint: disable=no-method-argument
 import re
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from typing import List, Dict, Tuple, Set, Optional
 from concurrent.futures import ThreadPoolExecutor
-from collections import OrderedDict
 import threading
 import tempfile
 import pathlib as pl
@@ -45,7 +44,7 @@ class Taxonomy:
         re.compile(r"unfamily", re.IGNORECASE),
         re.compile(r"ungenus", re.IGNORECASE),
         re.compile(r"unspec", re.IGNORECASE),
-        # # we don't filter incertae sedis as it could have sublevels
+        # We don't filter incertae sedis as it could have sublevels
         # re.compile(r"incertae", re.IGNORECASE),
     ]
     unknown_tax_reg = re.compile(
@@ -156,10 +155,9 @@ class Taxonomy:
         It returns taxonomy up to the given level.
             e.g: Kingdom;Phylum;Class;Order;Family;Genus;Species;ZOTU
 
-        Args:
-            level (str): The taxonomy level up to which the taxonomy is needed.
-            only_knowns (bool): If True, only known taxonomies will be returned.
-            top_down (bool): If True, the taxonomy will be returned from Kingdom to ZOTU.
+        :param level: The taxonomy level up to which the taxonomy is needed.
+        :param only_knowns: If True, only known taxonomies will be returned.
+        :param top_down: If True, the taxonomy will be returned from Kingdom to ZOTU.
         """
         tax_lv_ind = self.level_tax_map.index(level)
         sliced_tax = []
@@ -193,7 +191,7 @@ class Taxonomy:
     @property
     def last_known_level(self) -> str:
         known_tax = self.get_tax_upto('ZOTU', only_knowns=True)
-        print(known_tax)
+        # print(known_tax)
         known_tax_levels = known_tax.tax_list
         return self.level_tax_map[len(known_tax_levels) - 1]
 
@@ -201,7 +199,7 @@ class Taxonomy:
         return f'{self.tax_str}'
 
     def __str__(self):
-        return f"{self.tax_str}"
+        return f'{self.tax_str}'
 
     def __hash__(self):
         return hash(self.tax_str)
@@ -282,23 +280,37 @@ class Sequence:
         return f"{self.header}\n{self.sequence}"
 
 
-class SequenceGroup:
+class SequenceCluster:
     """
     Collection of sequences with the same taxonomy.
     """
     __centroid: Optional[Sequence] = None
     __sequences: List[Sequence] = []
-    homogenous_tax_group: bool = True
+    homogenous_tax_group: bool = None
+    homogeneity_level: str = 'species'
+    tax_levels: List[str] = [
+        'kingdom',
+        'phylum',
+        'class',
+        'order',
+        'family',
+        'genus',
+        'species',
+        'ZOTU'
+    ]
 
     def __init__(
         self,
         sequences: List[Sequence],
         centroid: Sequence = None,
-        homogenous_tax_group: bool = True):
-        self.homogenous_tax_group = homogenous_tax_group
-        will_be_homogenous = self.__class__.is_homogenous_group(sequences)
-        if self.homogenous_tax_group and not will_be_homogenous:
+        homogeneity_level: str = 'species',
+        force_homogeneity: bool = True):
+        self.force_homogeneity = force_homogeneity
+        self.homogeneity_level = homogeneity_level
+        will_be_homogenous = self.__class__.is_homogenous_group(sequences, self.homogeneity_level)
+        if self.force_homogeneity and not will_be_homogenous:
             raise ValueError("All sequences should have the same taxonomy.")
+        self.homogenous_tax_group = will_be_homogenous
         self.__sequences = sequences
         self.__set_centroid(centroid)
 
@@ -308,9 +320,12 @@ class SequenceGroup:
 
     @sequences.setter
     def sequences(self, sequences: List[Sequence]):
-        will_be_homogenous = self.__class__.is_homogenous_group(sequences)
-        if self.homogenous_tax_group and not will_be_homogenous:
+        will_be_homogenous = self.__class__.is_homogenous_group(
+            sequences, self.homogeneity_level
+        )
+        if self.force_homogeneity and not will_be_homogenous:
             raise ValueError("All sequences should have the same taxonomy.")
+        self.homogenous_tax_group = will_be_homogenous
         self.__sequences = sequences
         self.__centroid = None
 
@@ -327,44 +342,87 @@ class SequenceGroup:
             raise ValueError("The centroid should be one of the sequences in the group.")
         self.__centroid = centroid
 
+    def closest_common_ancestor(self) -> Taxonomy:
+        """
+        It returns the closest common ancestor of the sequences' taxonomies in the group.
+        #TODO what if the sequences have different taxonomies even from kingdom level? # NOTE
+        """
+        common_ancestor = []
+        for tax_level in self.tax_levels:
+            taxs_list = [
+                seq.header.taxonomy.get_tax_upto(tax_level, only_knowns=True)
+                # TODO if tax_level='Bacteria' and is unknown, we get ''
+                for seq in self.sequences if seq.header.taxonomy
+            ]
+            if len(set(taxs_list)) == 1:
+                tax_obj = taxs_list[0]
+                common_ancestor.insert(0, tax_obj.get_level(tax_level))
+            else:
+                break
+        return Taxonomy('tax=' + ';'.join(common_ancestor))
+
     @property
     def tax(self) -> Taxonomy:
-        if self.__class__.is_homogenous_group(self.sequences):
-            return self.sequences[0].header.taxonomy.get_tax_upto('ZOTU', only_knowns=True)
-        print(f"The sequences do not have the same taxonomy in {self}")
-        return None
+        is_homogenous_group = self.__class__.is_homogenous_group(
+            self.sequences,
+            upto_level=self.homogeneity_level
+        )
+        tax_ = Taxonomy('tax=')
+        if len(self.sequences) == 0:
+            return tax_
+        if is_homogenous_group:
+            tax_ = self.sequences[0].header.taxonomy.get_tax_upto('ZOTU', only_knowns=True)
+        elif not is_homogenous_group:
+            tax_ = self.closest_common_ancestor()
+        return tax_
 
     def add_sequence(self, sequence: Sequence):
         """
         It checks if the given sequence has the same taxonomy as the other members of the group.
         """
-        will_be_homogenous = self.__class__.is_homogenous_group([sequence] + self.sequences)
-        if self.homogenous_tax_group and not will_be_homogenous:
+        will_be_homogenous = self.__class__.is_homogenous_group(
+            [sequence] + self.sequences,
+            upto_level=self.homogeneity_level
+        )
+        if self.force_homogeneity and not will_be_homogenous:
             raise ValueError(
                 "The sequence does not have the same taxonomy as the other members of the group."
             )
+        self.homogenous_tax_group = will_be_homogenous
         self.__sequences.append(sequence)
         self.__centroid = None
 
+    def __str__(self):
+        return f"{self.__class__.__name__}({self.tax}, ({len(self.sequences)})"
+
+    def __repr__(self):
+        return self.__str__()
 
     @staticmethod
-    def is_homogenous_group(sequences: List[Sequence], upto_level: str = "ZOTU") -> bool:
-        taxs_list = [str(seq.header.taxonomy.get_tax_upto(upto_level)) for seq in sequences]
+    def is_homogenous_group(sequences: List[Sequence], upto_level: str = "species") -> bool:
+        """
+        It checks if all sequences in the group have the same taxonomy up to the given level.
+
+        :param sequences: The list of sequences to be checked.
+        :param upto_level: The taxonomy level up to which the taxonomy should be checked.
+            default: species
+        """
+        taxs_list = [
+            str(seq.header.taxonomy.get_tax_upto(upto_level))
+            for seq in sequences if seq.header.taxonomy]
         taxs_set = set(taxs_list)
         return len(taxs_set) == 1
 
     def set_level(self, level: str, value: str):
+        if len(self.sequences):
+            print("No sequences in the group.")
         for seq in self.sequences:
             seq.header.taxonomy.set_level(level, value)
 
     def get_tax_upto(self, level: str, only_knowns: bool = False, top_down: bool = True) -> str:
+        if len(self.sequences) == 0:
+            return ''
         return self.sequences[0].header.taxonomy.get_tax_upto(level, only_knowns, top_down)
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}({self.tax}, ({len(self.sequences)})"
-
-    def __str__(self):
-        return self.__repr__()
 
     def __hash__(self):
         return hash([seq.__hash__ for seq in self.sequences])
@@ -385,6 +443,146 @@ class SequenceGroup:
         with open(output_file_path, 'w', encoding='utf-8') as fasta:
             for seq in self.sequences:
                 fasta.write(str(seq) + '\n')
+
+
+class SpeciesGroup(SequenceCluster):
+
+    def __init__(self, sequences: List[Sequence], centroid: Sequence):
+        if not self.is_homogenous_group(sequences, upto_level='species'):
+            raise ValueError(
+                "All sequences should have the same taxonomy up to species level."
+            )
+        super().__init__(
+            sequences,
+            centroid,
+            force_homogeneity=True,
+            homogeneity_level='species'
+        )
+
+
+class GenusGroup(SequenceCluster):
+
+    def __init__(self, sequences: List[Sequence], centroid: Sequence):
+        if not self.is_homogenous_group(sequences, upto_level='genus'):
+            raise ValueError(
+                "All sequences should have the same taxonomy up to genus level."
+            )
+        super().__init__(
+            sequences,
+            centroid,
+            force_homogeneity=True,
+            homogeneity_level='genus'
+        )
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.tax}, ({len(self.sequences)})"
+
+    def __str__(self):
+        return self.__repr__()
+
+class FamilyGroup(SequenceCluster):
+
+    def __init__(self, sequences: List[Sequence], centroid: Sequence):
+        if not self.is_homogenous_group(sequences, upto_level='family'):
+            raise ValueError(
+                "All sequences should have the same taxonomy up to genus level."
+            )
+        super().__init__(
+            sequences,
+            centroid,
+            force_homogeneity=True,
+            homogeneity_level='family'
+        )
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.tax}, ({len(self.sequences)})"
+
+    def __str__(self):
+        return self.__repr__()
+
+
+class OrderGroup(SequenceCluster):
+
+    def __init__(self, sequences: List[Sequence], centroid: Sequence):
+        if not self.is_homogenous_group(sequences, upto_level='order'):
+            raise ValueError(
+                "All sequences should have the same taxonomy up to genus level."
+            )
+        super().__init__(
+            sequences,
+            centroid,
+            force_homogeneity=True,
+            homogeneity_level='order'
+        )
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.tax}, ({len(self.sequences)})"
+
+    def __str__(self):
+        return self.__repr__()
+
+
+class ClassGroup(SequenceCluster):
+
+    def __init__(self, sequences: List[Sequence], centroid: Sequence):
+        if not self.is_homogenous_group(sequences, upto_level='class'):
+            raise ValueError(
+                "All sequences should have the same taxonomy up to genus level."
+            )
+        super().__init__(
+            sequences,
+            centroid,
+            force_homogeneity=True,
+            homogeneity_level='class'
+        )
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.tax}, ({len(self.sequences)})"
+
+    def __str__(self):
+        return self.__repr__()
+
+
+class PhylumGroup(SequenceCluster):
+
+    def __init__(self, sequences: List[Sequence], centroid: Sequence):
+        if not self.is_homogenous_group(sequences, upto_level='phylum'):
+            raise ValueError(
+                "All sequences should have the same taxonomy up to genus level."
+            )
+        super().__init__(
+            sequences,
+            centroid,
+            force_homogeneity=True,
+            homogeneity_level='phylum'
+        )
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.tax}, ({len(self.sequences)})"
+
+    def __str__(self):
+        return self.__repr__()
+
+
+class KingdomGroup(SequenceCluster):
+
+    def __init__(self, sequences: List[Sequence], centroid: Sequence):
+        if not self.is_homogenous_group(sequences, upto_level='kingdom'):
+            raise ValueError(
+                "All sequences should have the same taxonomy up to genus level."
+            )
+        super().__init__(
+            sequences,
+            centroid,
+            force_homogeneity=True,
+            homogeneity_level='kingdom'
+        )
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.tax}, ({len(self.sequences)})"
+
+    def __str__(self):
+        return self.__repr__()
 
 
 class FastaFile:
@@ -653,9 +851,8 @@ class TaxedFastaFile(FastaFile):
         """
         It returns a list of sequences that their knwon taxonomy is known up to the given level.
 
-        Args:
-            level (str): The taxonomy level up to which the taxonomy is needed.
-            only_knowns (bool): If True, only known taxonomies will be returned.
+        :param level: The taxonomy level up to which the taxonomy is needed.
+        :param only_knowns: If True, only known taxonomies will be returned.
         """
         taxs = self.tax_obj_list
         tax_list = []
@@ -694,7 +891,7 @@ class UClust:
     def cluster(
         self,
         sim_threshold: float,
-        ) -> List[SequenceGroup]:
+        ) -> List[SequenceCluster]:
         """
         It clusters the sequences using UClust and returns a dictionary of clusters.
         """
@@ -766,14 +963,24 @@ class TICAnalysis:
             # create a list of tasks
             tasks = []
             for tax in known_genus_taxs:
-                sequences = self.fasta_file.filter_seq_by_tax(tax)
-                tasks.append(executor.submit(self.complete_known_genus, tax))
+                tax = Taxonomy(tax)
+                sequences = SequenceCluster(self.fasta_file.filter_seq_by_tax(tax))
+                # tasks.append(executor.submit(self.complete_known_genus, tax))
                 # TODO
 
     def complete_known_family(self, threads: int):
         pass
         # TODO
 
-    def complete_known_order(self, threads: int):
-        pass
-        # TODO
+    def complete_known_order(self, threads: int) -> List[SequenceCluster]:
+        known_genus_taxs = self.fasta_file.tax_set_at_known_level('genus')
+        # start a thread pool
+        with ThreadPoolExecutor(max_workers=threads) as executor:
+            # create a list of tasks
+            tasks = []
+            for tax in known_genus_taxs:
+                tax = Taxonomy(tax)
+                sequences = SequenceCluster(self.fasta_file.filter_seq_by_tax(tax))
+                # tasks.append(executor.submit(self.complete_known_genus, tax))
+                # TODO
+                print(sequences)
