@@ -445,7 +445,7 @@ class SequenceCluster:
                 fasta.write(str(seq) + '\n')
 
 
-class SpeciesGroup(SequenceCluster):
+class SpeciesCluster(SequenceCluster):
 
     def __init__(self, sequences: List[Sequence], centroid: Sequence):
         if not self.is_homogenous_group(sequences, upto_level='species'):
@@ -460,7 +460,7 @@ class SpeciesGroup(SequenceCluster):
         )
 
 
-class GenusGroup(SequenceCluster):
+class GenusCluster(SequenceCluster):
 
     def __init__(self, sequences: List[Sequence], centroid: Sequence):
         if not self.is_homogenous_group(sequences, upto_level='genus'):
@@ -480,7 +480,7 @@ class GenusGroup(SequenceCluster):
     def __str__(self):
         return self.__repr__()
 
-class FamilyGroup(SequenceCluster):
+class FamilyCluster(SequenceCluster):
 
     def __init__(self, sequences: List[Sequence], centroid: Sequence):
         if not self.is_homogenous_group(sequences, upto_level='family'):
@@ -501,7 +501,7 @@ class FamilyGroup(SequenceCluster):
         return self.__repr__()
 
 
-class OrderGroup(SequenceCluster):
+class OrderCluster(SequenceCluster):
 
     def __init__(self, sequences: List[Sequence], centroid: Sequence):
         if not self.is_homogenous_group(sequences, upto_level='order'):
@@ -522,7 +522,7 @@ class OrderGroup(SequenceCluster):
         return self.__repr__()
 
 
-class ClassGroup(SequenceCluster):
+class ClassCluster(SequenceCluster):
 
     def __init__(self, sequences: List[Sequence], centroid: Sequence):
         if not self.is_homogenous_group(sequences, upto_level='class'):
@@ -543,7 +543,7 @@ class ClassGroup(SequenceCluster):
         return self.__repr__()
 
 
-class PhylumGroup(SequenceCluster):
+class PhylumCluster(SequenceCluster):
 
     def __init__(self, sequences: List[Sequence], centroid: Sequence):
         if not self.is_homogenous_group(sequences, upto_level='phylum'):
@@ -564,7 +564,7 @@ class PhylumGroup(SequenceCluster):
         return self.__repr__()
 
 
-class KingdomGroup(SequenceCluster):
+class KingdomCluster(SequenceCluster):
 
     def __init__(self, sequences: List[Sequence], centroid: Sequence):
         if not self.is_homogenous_group(sequences, upto_level='kingdom'):
