@@ -4,22 +4,24 @@
 # pylint: disable=too-few-public-methods
 # pylint: disable=no-method-argument
 import re
-from collections import defaultdict, OrderedDict
-from typing import List, Dict, Tuple, Set, Optional
-from concurrent.futures import ThreadPoolExecutor
-import threading
 import tempfile
 import pathlib as pl
 import subprocess
 import shutil
+from collections import defaultdict, OrderedDict
+from typing import List, Dict, Tuple, Set, Optional
+from concurrent.futures import ThreadPoolExecutor
+import tqdm
 
 
 class Taxonomy:
 
     output_delimiter = '___'
     delimiter = ';'  # Default delimiter for taxonomy
-    tax_regex = re.compile(r"tax=(?P<tax>([^;]+;)*([^;]+)?;?)$", re.IGNORECASE)
+    # TODO check the regex below
+    tax_regex = re.compile(r"\s(?P<tax_tag>tax=)?(?P<tax>([^;]+;)*([^;]+)?;?)$", re.IGNORECASE)
     complete_taxonomy_length = 8
+    tax_tag = ''
     level_tax_map = [
         'kingdom',
         'phylum',
@@ -55,25 +57,53 @@ class Taxonomy:
     def __init__(self, tax_str: str, delimiter: str = None):
         self.delimiter = delimiter if delimiter else self.delimiter
         tax_reg_match = self.tax_regex.search(tax_str)
-        self.tax_str = ''
+        # NOTE self.__tax_str is the cleaned original taxonomy string without implicit NA-levels.
+        self.__tax_str = ''
         if tax_reg_match:
             tax_str = tax_reg_match.group('tax')
-            self.tax_str = self.get_clean_taxonomy(tax_str, self.delimiter)
+            self.tax_tag = tax_reg_match.group('tax_tag') if tax_reg_match.group('tax_tag') else ''
+            self.__tax_str = self.get_clean_taxonomy(tax_str, self.delimiter)
         truncated_tax = self.delimiter.join(self._get_tax_list())
-        self.tax_str = truncated_tax
+        self.__tax_str = truncated_tax
+        self.__full_tax = self.get_tax_upto('species', only_knowns=False)
+
+    @property
+    def full_tax(self) -> str:
+        return self.get_tax_upto('species', only_knowns=False)
+
+    @full_tax.setter
+    def full_tax(self, full_tax: str):
+        clean_full_tax = self.get_clean_taxonomy(full_tax, self.delimiter)
+        # full-level tax should start with self.__tax_str
+        if not clean_full_tax.startswith(self.__tax_str):
+            raise ValueError(
+                f"Full level taxonomy {full_tax} should start with {self.__tax_str}"
+            )
+        # full tax should have self.complete_taxonomy_length levels
+        self.__full_tax = self.__class__(clean_full_tax).get_tax_upto('species', only_knowns=False)
+
+    @property
+    def tax_str(self) -> str:
+        return self.__tax_str
+
+    @tax_str.setter
+    def tax_str(self, tax_str: str):
+        cleaned_tax = self.get_clean_taxonomy(tax_str, self.delimiter)
+        self.__tax_str = cleaned_tax
+        self.__full_tax = self.get_tax_upto('species', only_knowns=False)
 
     @property
     def tax_list(self) -> List[str]:
         """
-        It returns the taxonomy as a list of strings based on self.tax_str.
-        NOTE self.tax_str is the cleaned original taxonomy string without implicit NA-levels.
+        It returns the taxonomy as a list of strings based on self.__tax_str.
+        NOTE self.__tax_str is the cleaned original taxonomy string without implicit NA-levels.
         """
         return self._get_tax_list(self.delimiter)
 
     def _get_tax_list(self, delimiter: str = None) -> List[str]:
         delimiter = delimiter if delimiter else self.delimiter
         # Any taxonomy with more than complete_taxonomy_length levels is truncated
-        return self.tax_str.split(delimiter)[:self.complete_taxonomy_length]
+        return self.__tax_str.split(delimiter)[:self.complete_taxonomy_length]
 
     @classmethod
     def get_clean_taxonomy(cls, tax_str: str, delimiter: str = None) -> str:
@@ -85,6 +115,7 @@ class Taxonomy:
                 invalid_tax_match = invalid_tax.search(curr_tax)
                 if not invalid_tax_match and curr_tax:
                     clean_tax.append(curr_tax)
+                else:
                     break
 
         return delimiter.join(clean_tax)
@@ -124,20 +155,23 @@ class Taxonomy:
         return f'NA-{str(level).capitalize()}'
 
     def set_level(self, level: str, value: str):
+        # NOTE This is not consistent with the rest of the code
+        # It is setting self.__tax_str with NA-levels which is not
+        # supposed throughout the code.
         try:
             tax_level_ind = self.level_tax_map.index(level)
         except IndexError as ind_exc:
             raise IndexError(
-                f'{ind_exc}: Taxonomy level {level} is not available for {self.tax_str}'
+                f'{ind_exc}: Taxonomy level {level} is not available for {self.__tax_str}'
             ) from ind_exc
         except Exception as e:
             raise e
-        cur_tax_list = self.get_tax_upto('ZOTU').tax_list
+        cur_tax_list = self.get_tax_upto('species').tax_list
         if len(self.tax_list) > tax_level_ind:
             cur_tax_list[tax_level_ind] = value
         else:
-            raise ValueError(f"Taxonomy level {level} is not available for {self.tax_str}")
-        self.tax_str = self.delimiter.join(cur_tax_list)
+            raise ValueError(f"Taxonomy level {level} is not available for {self.__tax_str}")
+        self.__full_tax = self.delimiter.join(cur_tax_list)
 
     def is_known_upto(self, level: str) -> bool:
         """
@@ -147,10 +181,10 @@ class Taxonomy:
         return len(self.tax_list) > tax_level_ind
 
     def get_tax_upto(
-        self,
-        level: str,
-        only_knowns: bool = False,
-        top_down: bool = True) -> 'Taxonomy':
+            self,
+            level: str,
+            only_knowns: bool = False,
+            top_down: bool = True) -> 'Taxonomy':
         """
         It returns taxonomy up to the given level.
             e.g: Kingdom;Phylum;Class;Order;Family;Genus;Species;ZOTU
@@ -173,9 +207,14 @@ class Taxonomy:
                 unknown_tax_match = self.unknown_tax_reg.match(cur_level)
                 if not unknown_tax_match:
                     sliced_tax.append(cur_level)
+                else:
+                    break
             elif not cur_level:
-                raise ValueError(f"Taxonomy level {cur_level} is not available for {self.tax_str}")
-        tax_ = "tax="
+                raise ValueError(
+                    f"Taxonomy level {cur_level} is not available for {self.__tax_str}"
+                )
+        tax_ = ""
+        # return value of this method is a Taxonomy object without tax_tag
         if top_down:
             tax_ += self.delimiter.join(sliced_tax)
         else:
@@ -190,22 +229,24 @@ class Taxonomy:
 
     @property
     def last_known_level(self) -> str:
-        known_tax = self.get_tax_upto('ZOTU', only_knowns=True)
-        # print(known_tax)
+        known_tax = self.get_tax_upto('species', only_knowns=True)
+        # NOTE if the known taxonomy is continuous, the last known level is the last level.
+        # Otherwise it is the level before the first unknown level.
         known_tax_levels = known_tax.tax_list
         return self.level_tax_map[len(known_tax_levels) - 1]
 
     def __repr__(self):
-        return f'{self.tax_str}'
+        return f'{self.__tax_str}'
 
     def __str__(self):
-        return f'{self.tax_str}'
+        str_tax = f"{self.tax_tag}{self.__full_tax}"
+        return f'{str_tax}'
 
     def __hash__(self):
-        return hash(self.tax_str)
+        return hash(self.__tax_str)
 
     def __bool__(self):
-        return bool(self.tax_str)
+        return bool(self.__tax_str)
 
     def __eq__(self, other):
         # NOTE taxonomy should not be case-sensitive
@@ -225,7 +266,7 @@ class SeqID:
         self.head_id = str(seq_id_match.group('seq_header'))
 
     def __repr__(self):
-        return self.head_id
+        return f">{self.head_id}"
 
     def __str__(self):
         return self.__repr__()
@@ -286,7 +327,7 @@ class SequenceCluster:
     """
     __centroid: Optional[Sequence] = None
     __sequences: List[Sequence] = []
-    homogenous_tax_group: bool = None
+    homogenous_tax_group: bool = True
     homogeneity_level: str = 'species'
     tax_levels: List[str] = [
         'kingdom',
@@ -300,26 +341,26 @@ class SequenceCluster:
     ]
 
     def __init__(
-        self,
-        sequences: List[Sequence],
-        centroid: Sequence = None,
-        homogeneity_level: str = 'species',
-        force_homogeneity: bool = True):
+            self,
+            sequences: List[Sequence],
+            centroid: Sequence = None,
+            homogeneity_level: str = 'species',
+            force_homogeneity: bool = True):
         self.force_homogeneity = force_homogeneity
         self.homogeneity_level = homogeneity_level
         will_be_homogenous = self.__class__.is_homogenous_group(sequences, self.homogeneity_level)
         if self.force_homogeneity and not will_be_homogenous:
-            raise ValueError("All sequences should have the same taxonomy.")
+            raise ValueError("Forcing homogeneity but the sequences are not homogenous.")
         self.homogenous_tax_group = will_be_homogenous
         self.__sequences = sequences
-        self.__set_centroid(centroid)
+        self.centroid = centroid
 
     @property
     def sequences(self) -> List[Sequence]:
         return self.__sequences
 
     @sequences.setter
-    def sequences(self, sequences: List[Sequence]):
+    def sequences(self, sequences: List[Sequence], centroid: Sequence = None):
         will_be_homogenous = self.__class__.is_homogenous_group(
             sequences, self.homogeneity_level
         )
@@ -327,7 +368,7 @@ class SequenceCluster:
             raise ValueError("All sequences should have the same taxonomy.")
         self.homogenous_tax_group = will_be_homogenous
         self.__sequences = sequences
-        self.__centroid = None
+        self.centroid = centroid
 
     @property
     def centroid(self) -> Sequence:
@@ -339,13 +380,15 @@ class SequenceCluster:
 
     def __set_centroid(self, centroid: Sequence):
         if centroid not in self.sequences:
+            # if centroid is None then we do not end up here as None is element of all lists
             raise ValueError("The centroid should be one of the sequences in the group.")
         self.__centroid = centroid
 
     def closest_common_ancestor(self) -> Taxonomy:
         """
         It returns the closest common ancestor of the sequences' taxonomies in the group.
-        #TODO what if the sequences have different taxonomies even from kingdom level? # NOTE
+        # NOTE what if the sequences have different taxonomies even from kingdom level?
+        # TIC does not work with non-bacterial sequences.
         """
         common_ancestor = []
         for tax_level in self.tax_levels:
@@ -371,7 +414,7 @@ class SequenceCluster:
         if len(self.sequences) == 0:
             return tax_
         if is_homogenous_group:
-            tax_ = self.sequences[0].header.taxonomy.get_tax_upto('ZOTU', only_knowns=True)
+            tax_ = self.sequences[0].header.taxonomy.get_tax_upto('species', only_knowns=True)
         elif not is_homogenous_group:
             tax_ = self.closest_common_ancestor()
         return tax_
@@ -409,11 +452,13 @@ class SequenceCluster:
         """
         taxs_list = [
             str(seq.header.taxonomy.get_tax_upto(upto_level))
-            for seq in sequences if seq.header.taxonomy]
+            for seq in sequences if seq.header.taxonomy
+        ]
         taxs_set = set(taxs_list)
         return len(taxs_set) == 1
 
     def set_level(self, level: str, value: str):
+        # NOTE taxonomy.set_level is not logically consistent with the rest of the code
         if len(self.sequences):
             print("No sequences in the group.")
         for seq in self.sequences:
@@ -441,7 +486,11 @@ class SequenceCluster:
 
     def write_to_fasta(self, output_file_path: pl.Path):
         with open(output_file_path, 'w', encoding='utf-8') as fasta:
+            if self.centroid:
+                fasta.write(f"{str(self.centroid)}\n")
             for seq in self.sequences:
+                if seq == self.centroid:
+                    continue
                 fasta.write(str(seq) + '\n')
 
 
@@ -479,6 +528,7 @@ class GenusCluster(SequenceCluster):
 
     def __str__(self):
         return self.__repr__()
+
 
 class FamilyCluster(SequenceCluster):
 
@@ -591,7 +641,8 @@ class FastaFile:
         self.fasta_file_path = fasta_file_path.absolute()
 
     def get_hash_table(self) -> Dict[int, str]:
-        # NOTE suprisingly, this does not help reduce memory usage as compared to get_sequences()
+        # NOTE suprisingly, this does not help reduce memory footprint
+        # as compared to get_sequences()
         hash_table = {}
         with open(self.fasta_file_path, 'r', encoding='utf-8') as fasta:
             curr_line = fasta.readline().strip()
@@ -788,17 +839,15 @@ class TaxononomyTree:
 
 class TaxedFastaFile(FastaFile):
 
-    def __init__(self, fasta_file_path: pl.Path):
-        super().__init__(fasta_file_path)
-        self.taxonomies_objs_list = self.__get_seq_taxonomies()
-
     @property
     def tax_obj_list(self) -> List[Taxonomy]:
-        return [header.taxonomy for header in self.get_seq_headers()]
+        return self.__get_seq_taxonomies()
 
     def __get_seq_taxonomies(self) -> List[Taxonomy]:
         headers = self.get_seq_headers()
         taxonomies = [header.taxonomy for header in headers]
+        # NOTE we might need to omit the check for tax as sequences without
+        # taxnomoies are planned to be written to output file untouched
         if any(True for tax in taxonomies if not tax):
             print("Sodme sequences do not have any taxonomy information.")
         return taxonomies
@@ -847,7 +896,7 @@ class TaxedFastaFile(FastaFile):
                 tax_seq_map[seq_obj.header.taxonomy] = seq_obj
         return tax_seq_map
 
-    def tax_set_at_known_level(self, level: str) -> List[Taxonomy]:
+    def filter_tax_set_at_last_known_level(self, level: str) -> List[Taxonomy]:
         """
         It returns a list of sequences that their knwon taxonomy is known up to the given level.
 
@@ -860,6 +909,7 @@ class TaxedFastaFile(FastaFile):
             if tax.last_known_level == level:
                 tax_list.append(tax)
         tax_list = list(set(tax_list))
+        sorted(tax_list, key=lambda x: x.tax_str)
         return tax_list
 
 
@@ -937,50 +987,44 @@ class TICAnalysis:
 
     def __init__(self, taxed_fasta_file_path: pl.Path):
         self.fasta_file = TaxedFastaFile(taxed_fasta_file_path)
+        # self.target_lineages is the reference list to filter groups of sequences
+        # based on their taxonomy and NOTE: it should be immutable
         self.target_lieages = list(set(list(self.fasta_file.tax_obj_list)))
         self.tax_tree = TaxononomyTree(self.fasta_file.tax_obj_list)
         self.cluster_thresholds = self.default_thresholds
 
+    def filter_seq_with_last_known_tax(self, level: str) -> List[Taxonomy]:
+        this_level_known_tax = self.fasta_file.filter_tax_set_at_last_known_level(level)
+        this_level_knwon_tax = [
+            tax for tax in this_level_known_tax
+            if tax.kingdom == 'Bacteria'
+        ]
+        return this_level_known_tax
+
     def run(
-        self,
-        threads: int = 1,
-        cluster_thresholds: Dict[str, float] = None):
-        self.cluster_thresholds.update(cluster_thresholds)
-        self.complete_tax_at_level('species', threads)
-
-    def complete_tax_at_level(self, level: str, threads: int):
-        """
-        It takes all sequences of taxonomies known at the given level but unknown at the next level.
-        Then tries to cluster them at the next level in a parallel manner.
-        """
-        tax_lineage_at_level = self.fasta_file.tax_set_at_known_level(level)
-        # TODO
-
-    def complete_known_genus(self, threads: int):
-        known_genus_taxs = self.fasta_file.tax_set_at_known_level('genus')
-        # start a thread pool
-        with ThreadPoolExecutor(max_workers=threads) as executor:
-            # create a list of tasks
-            tasks = []
-            for tax in known_genus_taxs:
-                tax = Taxonomy(tax)
-                sequences = SequenceCluster(self.fasta_file.filter_seq_by_tax(tax))
-                # tasks.append(executor.submit(self.complete_known_genus, tax))
-                # TODO
-
-    def complete_known_family(self, threads: int):
+            self,
+            threads: int = 1,
+            cluster_thresholds: Dict[str, float] = None):
+        # grow sequences with last known taxonomy level be 'kingdom'
+        last_knwon_kingdom = self.filter_seq_with_last_known_tax('kingdom')
+        for tax in last_knwon_kingdom:
+            self.grow_taxonomy(tax)
+        # grow sequences with last known taxonomy level be 'phylum'
         pass
-        # TODO
+        # grow sequences with last known taxonomy level be 'class'
+        pass
+        # grow sequences with last known taxonomy level be 'order'
+        pass
+        # grow sequences with last knwon taxonomy level be 'family'
+        pass
+        # grow sequences with last known taxonomy level be 'genus'
+        pass
+        # grow sequences with last known taxonomy level be 'species'
 
-    def complete_known_order(self, threads: int) -> List[SequenceCluster]:
-        known_genus_taxs = self.fasta_file.tax_set_at_known_level('genus')
-        # start a thread pool
-        with ThreadPoolExecutor(max_workers=threads) as executor:
-            # create a list of tasks
-            tasks = []
-            for tax in known_genus_taxs:
-                tax = Taxonomy(tax)
-                sequences = SequenceCluster(self.fasta_file.filter_seq_by_tax(tax))
-                # tasks.append(executor.submit(self.complete_known_genus, tax))
-                # TODO
-                print(sequences)
+    def grow_taxonomy(self, tax_to_complete: Taxonomy):
+        homo_level = tax_to_complete.last_known_level
+        sequence_cluster = SequenceCluster(
+            self.fasta_file.filter_seq_by_tax(tax_to_complete),
+            homogeneity_level=homo_level
+            )
+        # TODO
