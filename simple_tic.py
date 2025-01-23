@@ -1,17 +1,14 @@
-# pylint: disable=missing-docstring
-# pylint: disable=missing-class-docstring
-# pylint: disable=missing-function-docstring
-# pylint: disable=too-few-public-methods
-# pylint: disable=no-method-argument
+# pylint: disable=missing-docstring,missing-class-docstring,missing-function-docstring
+# pylint: disable=too-few-public-methods,no-method-argument,too-many-lines
+# Description: This is a simple version of the TIC module.
 import re
 import tempfile
 import pathlib as pl
-import subprocess
-import shutil
 from collections import defaultdict, OrderedDict
 from typing import List, Dict, Tuple, Set, Optional
 from concurrent.futures import ThreadPoolExecutor
-import tqdm
+# import tqdm
+from tic_helper import system_sub, onelinefasta
 
 
 class Taxonomy:
@@ -55,6 +52,11 @@ class Taxonomy:
     )
 
     def __init__(self, tax_str: str, delimiter: str = None):
+        """
+        self.__tax_str: is string representation of taxnomoy without implicit NA-levels and
+        any invalid taxonomies from kingdom to farthest continuous known level.
+        self.__full_tax: is the full taxonomy string with all levels and implicit NA-levels.
+        """
         self.delimiter = delimiter if delimiter else self.delimiter
         tax_reg_match = self.tax_regex.search(tax_str)
         # NOTE self.__tax_str is the cleaned original taxonomy string without implicit NA-levels.
@@ -63,13 +65,13 @@ class Taxonomy:
             tax_str = tax_reg_match.group('tax')
             self.tax_tag = tax_reg_match.group('tax_tag') if tax_reg_match.group('tax_tag') else ''
             self.__tax_str = self.get_clean_taxonomy(tax_str, self.delimiter)
-        truncated_tax = self.delimiter.join(self._get_tax_list())
-        self.__tax_str = truncated_tax
-        self.__full_tax = self.get_tax_upto('species', only_knowns=False)
+            self.__tax_str = str(self.get_tax_upto('species', only_knowns=True).tax_str)
+        # self.__full_tax = self.get_tax_upto('species', only_knowns=False).tax_str
 
     @property
     def full_tax(self) -> str:
-        return self.get_tax_upto('species', only_knowns=False)
+        self.__full_tax = self.get_tax_upto('species', only_knowns=False).tax_str
+        return self.__full_tax
 
     @full_tax.setter
     def full_tax(self, full_tax: str):
@@ -80,7 +82,11 @@ class Taxonomy:
                 f"Full level taxonomy {full_tax} should start with {self.__tax_str}"
             )
         # full tax should have self.complete_taxonomy_length levels
-        self.__full_tax = self.__class__(clean_full_tax).get_tax_upto('species', only_knowns=False)
+        # NOTE check
+        self.__full_tax = self.__class__(clean_full_tax).get_tax_upto(
+            'species',
+            only_knowns=False
+        ).full_tax
 
     @property
     def tax_str(self) -> str:
@@ -89,7 +95,7 @@ class Taxonomy:
     @tax_str.setter
     def tax_str(self, tax_str: str):
         cleaned_tax = self.get_clean_taxonomy(tax_str, self.delimiter)
-        self.__tax_str = cleaned_tax
+        self.__tax_str = cleaned_tax.tax_str
         self.__full_tax = self.get_tax_upto('species', only_knowns=False)
 
     @property
@@ -106,7 +112,10 @@ class Taxonomy:
         return self.__tax_str.split(delimiter)[:self.complete_taxonomy_length]
 
     @classmethod
-    def get_clean_taxonomy(cls, tax_str: str, delimiter: str = None) -> str:
+    def get_clean_taxonomy(
+            cls,
+            tax_str: str,
+            delimiter: str = None) -> str:
         # NOTE needs testing
         delimiter = delimiter if delimiter else cls.delimiter
         clean_tax = []
@@ -235,11 +244,16 @@ class Taxonomy:
         known_tax_levels = known_tax.tax_list
         return self.level_tax_map[len(known_tax_levels) - 1]
 
+    @property
+    def last_known_tax(self) -> str:
+        known_tax = self.get_tax_upto('species', only_knowns=True)
+        return known_tax.get_level(self.last_known_level)
+
     def __repr__(self):
         return f'{self.__tax_str}'
 
     def __str__(self):
-        str_tax = f"{self.tax_tag}{self.__full_tax}"
+        str_tax = f"{self.tax_tag}{self.full_tax}"
         return f'{str_tax}'
 
     def __hash__(self):
@@ -394,8 +408,8 @@ class SequenceCluster:
         for tax_level in self.tax_levels:
             taxs_list = [
                 seq.header.taxonomy.get_tax_upto(tax_level, only_knowns=True)
-                # TODO if tax_level='Bacteria' and is unknown, we get ''
-                for seq in self.sequences if seq.header.taxonomy
+                # if tax_level='Bacteria' and is unknown, we get ''
+                for seq in self.sequences if seq.header.taxonomy and seq.header.taxonomy.is_known_upto('kingdom')
             ]
             if len(set(taxs_list)) == 1:
                 tax_obj = taxs_list[0]
@@ -479,13 +493,16 @@ class SequenceCluster:
         return len(self.sequences)
 
     def __iter__(self):
-        return iter(self.sequences)
+        # iter over centroid and sequences
+        if self.centroid and isinstance(self.centroid, Sequence):
+            yield self.centroid
+        yield from self.sequences
 
     def __bool__(self):
         return bool(self.sequences)
 
-    def write_to_fasta(self, output_file_path: pl.Path):
-        with open(output_file_path, 'w', encoding='utf-8') as fasta:
+    def write_to_fasta(self, output_file_path: pl.Path, mode: str = 'w'):
+        with open(output_file_path, mode, encoding='utf-8') as fasta:
             if self.centroid:
                 fasta.write(f"{str(self.centroid)}\n")
             for seq in self.sequences:
@@ -496,7 +513,7 @@ class SequenceCluster:
 
 class SpeciesCluster(SequenceCluster):
 
-    def __init__(self, sequences: List[Sequence], centroid: Sequence):
+    def __init__(self, sequences: List[Sequence], centroid: Sequence = None):
         if not self.is_homogenous_group(sequences, upto_level='species'):
             raise ValueError(
                 "All sequences should have the same taxonomy up to species level."
@@ -511,7 +528,7 @@ class SpeciesCluster(SequenceCluster):
 
 class GenusCluster(SequenceCluster):
 
-    def __init__(self, sequences: List[Sequence], centroid: Sequence):
+    def __init__(self, sequences: List[Sequence], centroid: Sequence = None):
         if not self.is_homogenous_group(sequences, upto_level='genus'):
             raise ValueError(
                 "All sequences should have the same taxonomy up to genus level."
@@ -532,7 +549,7 @@ class GenusCluster(SequenceCluster):
 
 class FamilyCluster(SequenceCluster):
 
-    def __init__(self, sequences: List[Sequence], centroid: Sequence):
+    def __init__(self, sequences: List[Sequence], centroid: Sequence = None):
         if not self.is_homogenous_group(sequences, upto_level='family'):
             raise ValueError(
                 "All sequences should have the same taxonomy up to genus level."
@@ -553,7 +570,7 @@ class FamilyCluster(SequenceCluster):
 
 class OrderCluster(SequenceCluster):
 
-    def __init__(self, sequences: List[Sequence], centroid: Sequence):
+    def __init__(self, sequences: List[Sequence], centroid: Sequence = None):
         if not self.is_homogenous_group(sequences, upto_level='order'):
             raise ValueError(
                 "All sequences should have the same taxonomy up to genus level."
@@ -574,7 +591,7 @@ class OrderCluster(SequenceCluster):
 
 class ClassCluster(SequenceCluster):
 
-    def __init__(self, sequences: List[Sequence], centroid: Sequence):
+    def __init__(self, sequences: List[Sequence], centroid: Sequence = None):
         if not self.is_homogenous_group(sequences, upto_level='class'):
             raise ValueError(
                 "All sequences should have the same taxonomy up to genus level."
@@ -595,7 +612,7 @@ class ClassCluster(SequenceCluster):
 
 class PhylumCluster(SequenceCluster):
 
-    def __init__(self, sequences: List[Sequence], centroid: Sequence):
+    def __init__(self, sequences: List[Sequence], centroid: Sequence = None):
         if not self.is_homogenous_group(sequences, upto_level='phylum'):
             raise ValueError(
                 "All sequences should have the same taxonomy up to genus level."
@@ -616,7 +633,7 @@ class PhylumCluster(SequenceCluster):
 
 class KingdomCluster(SequenceCluster):
 
-    def __init__(self, sequences: List[Sequence], centroid: Sequence):
+    def __init__(self, sequences: List[Sequence], centroid: Sequence = None):
         if not self.is_homogenous_group(sequences, upto_level='kingdom'):
             raise ValueError(
                 "All sequences should have the same taxonomy up to genus level."
@@ -729,12 +746,38 @@ class FastaFile:
                     sequences.append(seq_obj)
         return sequences
 
-    def write_fasta_file(self, output_file_path: pl.Path = None, sequences: List[Sequence] = None):
+    def write_to_fasta_file(
+        self,
+        output_file_path: pl.Path = None,
+        sequences: List[Sequence] = None,
+        mode: str = 'w'):
         if not output_file_path:
             output_file_path = self.fasta_file_path
-        with open(output_file_path, 'w', encoding='utf-8') as fasta:
+        with open(output_file_path, mode, encoding='utf-8') as fasta:
             for seq in sequences:
                 fasta.write(str(seq) + '\n')
+
+    def get_seq_by_seq_id(self, seq_ids_list: list = []) -> List[Sequence]:
+        output_list = []
+        if not seq_ids_list:
+            return output_list
+        with open(self.fasta_file_path, 'r', encoding='utf-8') as fasta_fio:
+            curr_line = fasta_fio.readline().strip()
+            seq_str = ''
+            seq_header = ''
+            while curr_line:
+                if curr_line.startswith('>'):
+                    if seq_str:
+                        seq_obj = Sequence(seq_header, seq_str)
+                        if seq_obj.header.seq_id in seq_ids_list:
+                            output_list.append(seq_obj)
+                        seq_str = ''
+                    seq_header = curr_line
+                else:
+                    seq_str += curr_line
+                curr_line = fasta_fio.readline().strip()
+
+        return output_list
 
 
 class TreeNode:
@@ -849,7 +892,7 @@ class TaxedFastaFile(FastaFile):
         # NOTE we might need to omit the check for tax as sequences without
         # taxnomoies are planned to be written to output file untouched
         if any(True for tax in taxonomies if not tax):
-            print("Sodme sequences do not have any taxonomy information.")
+            print("Some sequences do not have any taxonomy information.")
         return taxonomies
 
     def filter_seq_by_tax(self, taxonomy: Taxonomy) -> List[Sequence]:
@@ -913,67 +956,155 @@ class TaxedFastaFile(FastaFile):
         return tax_list
 
 
-class UClust:
+class TICUClust:
     """
     Objects of this class will take zOTUs and cluster them using UClust.
     """
-    uclust_bin = pl.Path('./uclust').absolute()
+    usearch_bin = pl.Path('./bin/usearch_linux_x86_12.0-beta').absolute()
 
     def __init__(
             self,
-            sequences: List[Sequence],  # this could be a an argument of a method
-            uclust_bin: pl.Path = pl.Path('./uclust').absolute(),
-            uclust_work_dir: pl.Path = pl.Path('./uclust_work_dir').absolute()
+            usearch_bin: pl.Path = pl.Path('./bin/usearch_linux_x86_12.0-beta').absolute(),
+            uclust_work_pd: pl.Path = pl.Path('./Uclust-WD').absolute()
             ):
-        self.sequences = sequences
-        self.uclust_bin = uclust_bin
-        if not self.uclust_bin.exists() or not self.uclust_bin.is_file():
-            raise FileNotFoundError(f"UClust binary not found at {self.uclust_bin}")
-        if uclust_work_dir.is_file():
-            raise FileNotFoundError(f"UClust work directory is a file at {uclust_work_dir}")
-        # create a temporary directory for UClust in the uclust_work_dir
-        with tempfile.TemporaryDirectory(dir=uclust_work_dir) as temp_cluster_dir:
-            # write sequences to a fasta file in the temporary directory
-            self.uclust_work_dir = pl.Path(temp_cluster_dir.name)
-            self.sequences.write_fasta(self.uclust_work_dir / 'sequences.fasta')
+        self.usearch_bin = pl.Path(pl.PurePath(usearch_bin)).absolute()
+        if not self.usearch_bin.exists() or not self.usearch_bin.is_file():
+            raise FileNotFoundError(f"Usearch binary not found at {self.usearch_bin}")
+        if uclust_work_pd.is_file():
+            raise FileNotFoundError(f"Usearch work directory is a file at {uclust_work_pd}")
+        self.uclust_work_dir = uclust_work_pd
 
+    def run_uclust(
+            self,
+            sequences: List[Sequence],
+            cluster_id: float = 0.987) -> Tuple[pl.Path, dict]:
+        """
+        It runs uclust_smallmem on the input fasta file and
+        returns the uc file path and the centroids fasta file path
 
-    def cluster(
-        self,
-        sim_threshold: float,
-        ) -> List[SequenceCluster]:
+        :param input_fasta: str
+            The path to the input fasta file
+        :return: str
         """
-        It clusters the sequences using UClust and returns a dictionary of clusters.
+         # create a temporary directory for UClust in the uclust_work_dir
+        with tempfile.TemporaryDirectory(dir=self.uclust_work_dir) as temp_cluster_dir:
+            run_dir = pl.Path(temp_cluster_dir.name)
+        sequence_cluster = SequenceCluster(sequences, force_homogeneity=False)
+        input_fasta_path = run_dir.joinpath("input.fasta").absolute()
+        sequence_cluster.write_to_fasta(input_fasta_path)
+        sorted_seq_file = self.sort_seqs(str(input_fasta_path), by="length")
+        centroids_file = input_fasta_path.parent.joinpath("cluster_centroids.fasta")
+        uc_file = input_fasta_path.parent.joinpath("otu_clusters.uc")
+        cmd_to_call = [
+            str(self.usearch_bin),
+            "-cluster_smallmem",
+            str(sorted_seq_file),
+            "-centroids",
+            str(centroids_file),
+            "-uc",
+            str(uc_file),
+            "-id",
+            str(cluster_id),
+            "-strand",
+            "both",
+        ]
+        system_sub(cmd_to_call, force_log=True)
+        onelinefasta(centroids_file)
+        centroid_cluster_dict = self.parse_uc_file(str(uc_file))
+        return input_fasta_path, centroid_cluster_dict
+
+    @staticmethod
+    def parse_uc_file(
+            uc_file: str,
+            cut_tax: bool = False) -> dict:
         """
-        # get sure that the self.uclust_work_dir is empty
-        shutil.rmtree(self.uclust_work_dir)
-        centroids_file = self.uclust_work_dir / 'centroids.fasta'
-        uc_file = self.uclust_work_dir / 'clusters.uc'
-        # TODO
-        subprocess.run(
-            [
-                str(self.uclust_bin),
-                self.uclust_work_dir / 'sequences.fasta',
-                '-id',
-                sim_threshold,
-                '-strand',
-                'both',
-                '-top_hits_only',
-                '-centroids',
-                str(centroids_file),
-                '-uc',
-                str(uc_file)
+        It parsed uc files from -uclust_smallmem. It returns a dictionary with
+        the centroid as the key and the members as the values. The centroid is
+        always the first element in the list of members
+
+        :param uc_file: str
+            The path to the uc file
+        :return: dict
+        """
+        uc_file = pl.Path(pl.PurePath(uc_file)).absolute()
+        # TODO test the regex below
+        tax_reg = re.compile(r"\s(?P<tax_tag>tax=)?(?P<tax>([^;]+;)*([^;]+)?;?)", re.IGNORECASE)
+
+        uc_dict = {}
+        with open(uc_file, 'r', encoding='utf-8') as uc_h:
+            line = uc_h.readline().strip()
+            while line:
+                if line.startswith("H"):
+                    line_tokens = line.split("\t")
+                    query = line_tokens[8]
+                    target_centroid = line_tokens[9]
+                    # omitting the taxonomic information
+                    if cut_tax:
+                        query = tax_reg.sub("", query).strip()
+                        target_centroid = tax_reg.sub("", target_centroid).strip()
+                    cluster_members = uc_dict.get(target_centroid, [])
+                    cluster_members.append(query)
+                    uc_dict[target_centroid] = cluster_members
+                elif line.startswith("S"):
+                    line_tokens = line.split("\t")
+                    centroid = line_tokens[8]
+                    # omitting the taxonomic information
+                    if cut_tax:
+                        centroid = tax_reg.sub("", centroid).strip()
+                    cluster_members = uc_dict.get(centroid, [])
+                    # the centroid is always the first element in the list
+                    cluster_members.insert(0, centroid)
+                    uc_dict[centroid] = cluster_members
+                line = uc_h.readline().strip()
+
+        return uc_dict
+
+    def get_sequences_clusters(
+            self,
+            sequences: List[Sequence],
+            cluster_id: float) -> List[SequenceCluster]:
+        clusters = []
+        input_fasta_path, cent_clust_dict = self.run_uclust(sequences, cluster_id)
+        input_fasta = TaxedFastaFile(input_fasta_path)
+        for cent_id, seqs_id in cent_clust_dict.items():
+            centroid = input_fasta.get_seq_by_seq_id([cent_id])[0]
+            last_knwon_tax_level = centroid.header.taxonomy.last_known_level
+            seqs = input_fasta.get_seq_by_seq_id(seqs_id)
+            cluster = SequenceCluster(seqs, centroid, last_knwon_tax_level)
+            clusters.append(cluster)
+        return clusters
+
+    def sort_seqs(self, to_sort_fasta: str, by: str = 'size') -> str:
+        to_sort_path = pl.Path(to_sort_fasta).resolve()
+        dir_path = to_sort_path.parent
+        sorted_fasta_file = dir_path / f"sorted_{by}.fasta"
+        if by == 'size':
+            cmd_to_call_list = [
+                str(self.usearch_bin),
+                "-sortbysize",
+                str(to_sort_path),
+                "-fastaout",
+                str(sorted_fasta_file),
             ]
-        )
-        # TODO
-
-    def parse_uc(self, uc_file: pl.Path) -> Dict[str, List[str]]:
-        pass
+            system_sub(cmd_to_call_list, force_log=True)
+        elif by == 'length':
+            cmd_to_call_list = [
+                str(self.usearch_bin),
+                "-sortbylength",
+                str(to_sort_path),
+                "-fastaout",
+                str(sorted_fasta_file),
+            ]
+            system_sub(cmd_to_call_list, force_log=True)
+            # print(" ".join(cmd_to_call_list))
+        else:
+            raise ValueError("Sorting should be by either 'size' or 'length'")
+        onelinefasta(sorted_fasta_file)
+        return sorted_fasta_file
 
 
 class TICAnalysis:
 
-    uclust_bin = pl.Path('./uclust.bin')
     threads = 1
     default_thresholds = OrderedDict({
         'kingdom': None,
@@ -982,20 +1113,21 @@ class TICAnalysis:
         'order': None,
         'family': 0.90,
         'genus': 0.95,
-        'species': 0.97,
+        'species': 0.987,
     })
 
     def __init__(self, taxed_fasta_file_path: pl.Path):
         self.fasta_file = TaxedFastaFile(taxed_fasta_file_path)
         # self.target_lineages is the reference list to filter groups of sequences
         # based on their taxonomy and NOTE: it should be immutable
-        self.target_lieages = list(set(list(self.fasta_file.tax_obj_list)))
-        self.tax_tree = TaxononomyTree(self.fasta_file.tax_obj_list)
+        # self.target_lieages = list(set(list(self.fasta_file.tax_obj_list)))
+        # self.tax_tree = TaxononomyTree(self.fasta_file.tax_obj_list)
         self.cluster_thresholds = self.default_thresholds
+        self.output_fasta = self.__get_fasta_file("output")
 
-    def filter_seq_with_last_known_tax(self, level: str) -> List[Taxonomy]:
+    def filter_tax_set_at_last_known_level(self, level: str) -> List[Taxonomy]:
         this_level_known_tax = self.fasta_file.filter_tax_set_at_last_known_level(level)
-        this_level_knwon_tax = [
+        this_level_known_tax = [
             tax for tax in this_level_known_tax
             if tax.kingdom == 'Bacteria'
         ]
@@ -1004,27 +1136,135 @@ class TICAnalysis:
     def run(
             self,
             threads: int = 1,
-            cluster_thresholds: Dict[str, float] = None):
-        # grow sequences with last known taxonomy level be 'kingdom'
-        last_knwon_kingdom = self.filter_seq_with_last_known_tax('kingdom')
-        for tax in last_knwon_kingdom:
-            self.grow_taxonomy(tax)
-        # grow sequences with last known taxonomy level be 'phylum'
-        pass
-        # grow sequences with last known taxonomy level be 'class'
-        pass
-        # grow sequences with last known taxonomy level be 'order'
-        pass
-        # grow sequences with last knwon taxonomy level be 'family'
-        pass
-        # grow sequences with last known taxonomy level be 'genus'
-        pass
-        # grow sequences with last known taxonomy level be 'species'
+            cluster_thresholds: Dict[str, float] = None
+            ) -> None:
+        self.threads = threads
+        if cluster_thresholds:
+            self.cluster_thresholds = cluster_thresholds
+        all_known_order_fasta_path = self.fill_up_to_order()
+        all_known_family_fasta_path = self.complete_family_level(all_known_order_fasta_path)
+        all_known_genus_fasta_path = self.complete_genus_level(all_known_family_fasta_path)
+        all_known_species_fasta_path = self.complete_species_level(all_known_genus_fasta_path)
+        # deleting the intermediate files
+        # all_known_order_fasta_path.unlink()
+        # all_known_family_fasta_path.unlink()
+        # all_known_genus_fasta_path.unlink()
 
-    def grow_taxonomy(self, tax_to_complete: Taxonomy):
+        return all_known_species_fasta_path
+
+    def grow_taxonomy(
+        self,
+        tax_to_complete: Taxonomy,
+        cluster_threshold: float = 0.987) -> List[SequenceCluster]:
+        uclust_wd = self.output_fasta.fasta_file_path.parent / "Uclust-WD"
+        uclust_obj = TICUClust(uclust_wd)
         homo_level = tax_to_complete.last_known_level
         sequence_cluster = SequenceCluster(
-            self.fasta_file.filter_seq_by_tax(tax_to_complete),
+            self.output_fasta.filter_seq_by_tax(tax_to_complete),
             homogeneity_level=homo_level
             )
-        # TODO
+        sub_clusters_list = uclust_obj.get_sequences_clusters(
+            list(sequence_cluster),
+            cluster_threshold
+        )
+        return sub_clusters_list
+
+    def __get_fasta_file(self, file_name: str) -> TaxedFastaFile:
+        input_fasta_parent_path = self.fasta_file.fasta_file_path.parent
+        all_known_order_fasta_path = input_fasta_parent_path / f"{str(file_name)}.fasta"
+        # deleting the file if it exists
+        if all_known_order_fasta_path.exists():
+            all_known_order_fasta_path.unlink()
+        all_known_order_fasta_path.touch()
+        all_known_order_fasta = TaxedFastaFile(all_known_order_fasta_path)
+        return all_known_order_fasta
+
+    def fill_up_to_order(self):
+        all_known_order_fasta = self.__get_fasta_file("all_known_order")
+        last_known_kingdoms = self.filter_tax_set_at_last_known_level('kingdom')
+        clusters_to_fill = []
+        for knwon_king_tax in last_known_kingdoms:
+            seq_cluster = KingdomCluster(
+                self.fasta_file.filter_seq_by_tax(knwon_king_tax)
+            )
+            clusters_to_fill.append(seq_cluster)
+
+        last_known_phylums = self.filter_tax_set_at_last_known_level('phylum')
+        for known_phyl_tax in last_known_phylums:
+            seq_cluster = PhylumCluster(
+                self.fasta_file.filter_seq_by_tax(known_phyl_tax)
+            )
+            clusters_to_fill.append(seq_cluster)
+
+        last_known_classes = self.filter_tax_set_at_last_known_level('class')
+        for known_class_tax in last_known_classes:
+            seq_cluster = ClassCluster(
+                self.fasta_file.filter_seq_by_tax(known_class_tax)
+            )
+            clusters_to_fill.append(seq_cluster)
+
+        for this_cluster in clusters_to_fill:
+            this_cluster.set_level('family', '')
+            this_cluster.set_level('genus', '')
+            this_cluster.set_level('species', '')
+            all_known_order_fasta.write_to_fasta_file(sequences=list(this_cluster), mode='a')
+
+        return all_known_order_fasta.fasta_file_path
+
+
+    def complete_family_level(self, all_known_order_fasta_path: pl.Path):
+        all_known_order_fasta = TaxedFastaFile(all_known_order_fasta_path)
+        last_known_order_taxs = all_known_order_fasta.filter_tax_set_at_last_known_level('order')
+
+        with ThreadPoolExecutor(max_workers=self.threads) as executor:
+            result_clusters = list(executor.map(
+                lambda tax: self.grow_taxonomy(tax, self.cluster_thresholds['family']),
+                last_known_order_taxs
+            ))
+            # make sure that each thread is done
+            for result in result_clusters:
+                pass
+        all_known_family_fasta = self.__get_fasta_file("all_known_family")
+        for ind, cluster in enumerate(result_clusters):
+            cluster.set_level('family', 'FOTU' + str(ind))
+            all_known_family_fasta.write_to_fasta_file(sequences=list(cluster), mode='a')
+
+        return all_known_family_fasta.fasta_file_path
+
+    def complete_genus_level(self, all_known_family_fasta_path: pl.Path):
+        all_known_family_fasta = TaxedFastaFile(all_known_family_fasta_path)
+        last_known_family_taxs = all_known_family_fasta.filter_tax_set_at_last_known_level('family')
+
+        with ThreadPoolExecutor(max_workers=self.threads) as executor:
+            result_clusters = list(executor.map(
+                lambda tax: self.grow_taxonomy(tax, self.cluster_thresholds['genus']),
+                last_known_family_taxs
+            ))
+            # make sure that each thread is done
+            for result in result_clusters:
+                pass
+        all_known_genus_fasta = self.__get_fasta_file("all_knwon_genus")
+        for ind, cluster in enumerate(result_clusters):
+            cluster.set_level('genus', 'GOTU' + str(ind))
+            all_known_genus_fasta.write_to_fasta_file(sequences=list(cluster), mode='a')
+
+        return all_known_genus_fasta.fasta_file_path
+
+    def complete_species_level(self, all_known_genus_fasta_path: pl.Path):
+        all_known_genus_fasta = TaxedFastaFile(all_known_genus_fasta_path)
+        last_known_genus_taxs = all_known_genus_fasta.filter_tax_set_at_last_known_level('genus')
+
+        with ThreadPoolExecutor(max_workers=self.threads) as executor:
+            result_clusters = list(executor.map(
+                lambda tax: self.grow_taxonomy(tax, self.cluster_thresholds['species']),
+                last_known_genus_taxs
+            ))
+            # make sure that each thread is done
+            for result in result_clusters:
+                pass
+        all_known_species_fasta = self.__get_fasta_file("all_known_species")
+        for ind, cluster in enumerate(result_clusters):
+            cluster.set_level('species', 'SOTU' + str(ind))
+            all_known_species_fasta.write_to_fasta_file(sequences=list(cluster), mode='a')
+
+        return all_known_species_fasta.fasta_file_path
