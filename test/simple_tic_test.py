@@ -16,6 +16,9 @@ class TestSeqID:
         header = ">seq1 some description"
         seq_id = SeqID(header)
         assert seq_id.head_id == ">seq1"
+        header = ">seq1 ; some; description"
+        seq_id = SeqID(header)
+        assert seq_id.head_id == ">seq1"
 
 
 class TestSeqHeader:
