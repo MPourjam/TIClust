@@ -127,6 +127,7 @@ class Taxonomy:
         # Any taxonomy with more than complete_taxonomy_length levels is truncated
         if full_level:
             return self.__full_tax.split(delimiter)[:self.complete_taxonomy_length]
+
         return self.__tax_str.split(delimiter)[:self.complete_taxonomy_length]
 
     @classmethod

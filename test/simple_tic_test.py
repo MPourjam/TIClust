@@ -83,13 +83,13 @@ class TestTaxonomy:
         tax_str = "tax=kingdom;phylum;unclass;unorder;family;genus;species;"
         taxonomy = Taxonomy(tax_str)
         assert taxonomy.tax_list == ["kingdom", "phylum"]
-        assert str(taxonomy) == "tax=kingdom;phylum;NA-Class;NA-Order;NA-Family;NA-Genus;NA-Species"
-        assert taxonomy.get_tax_upto('family').tax_str == "kingdom;phylum;NA-Class;NA-Order;NA-Family"
+        assert str(taxonomy) == "tax=kingdom;phylum;NA-Class;NA-Order;family;genus;species"
+        assert taxonomy.get_tax_upto('family', ret_type = 'str') == "kingdom;phylum;NA-Class;NA-Order;NA-Family"
         # missed family level so we cut from invalid or missed level
         tax_str = "tax=kingdom;phylum;class;order;;genus;species;"
         taxonomy = Taxonomy(tax_str)
         assert taxonomy.tax_list == ["kingdom", "phylum", "class", "order"]
-        assert str(taxonomy) == "tax=kingdom;phylum;class;order;NA-Family;NA-Genus;NA-Species"
+        assert str(taxonomy) == "tax=kingdom;phylum;class;order;NA-Family;genus;species"
 
     def test_full_tax(self):
         tax_str = "tax=kingdom;phylum;class;order;family;genus;species;"
@@ -122,7 +122,7 @@ class TestTaxonomy:
         tax_str = "tax=kingdom;phylum;class;order;family;genus;species;"
         taxonomy = Taxonomy(tax_str)
         assert taxonomy.is_known_upto("family")
-        assert not taxonomy.is_known_upto("ZOTU")
+        assert taxonomy.is_known_upto("species")
         tax_str = "tax=kingdom;phylum;;order;;genus;;"
         taxonomy = Taxonomy(tax_str)
         assert not taxonomy.is_known_upto("family")
