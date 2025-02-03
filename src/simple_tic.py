@@ -5,7 +5,7 @@ import re
 import tempfile
 import pathlib as pl
 from collections import defaultdict, OrderedDict
-from typing import List, Dict, Tuple, Set, Optional
+from typing import List, Dict, Tuple, Set, Optional, Union
 from concurrent.futures import ThreadPoolExecutor
 # import tqdm
 from tic_helper import system_sub, onelinefasta
@@ -16,7 +16,7 @@ class Taxonomy:
     output_delimiter = '___'
     delimiter = ';'  # Default delimiter for taxonomy
     # TODO check the regex below
-    tax_regex = re.compile(r"\s(?P<tax_tag>tax=)?(?P<tax>([^;]+;)*([^;]+)?;?)$", re.IGNORECASE)
+    tax_regex = re.compile(r"\s?(?P<tax_tag>tax=)?(?P<tax>([^;]*;)*[^;]*;?)$", re.IGNORECASE)
     complete_taxonomy_length = 8
     tax_tag = ''
     level_tax_map = [
@@ -26,8 +26,8 @@ class Taxonomy:
         'order',
         'family',
         'genus',
-        'species',
-        'ZOTU'
+        'species'
+        # 'ZOTU'
     ]
     invalid_tax_rgx = [
         re.compile(r"uncultured", re.IGNORECASE),
@@ -51,42 +51,51 @@ class Taxonomy:
         re.IGNORECASE
     )
 
+    hypo_full_tax_list = [
+        "NA-Kingdom",
+        "NA-Phylum",
+        "NA-Class",
+        "NA-Order",
+        "NA-Family",
+        "NA-Genus",
+        "NA-Species"
+    ]
+
     def __init__(self, tax_str: str, delimiter: str = None):
         """
         self.__tax_str: is string representation of taxnomoy without implicit NA-levels and
         any invalid taxonomies from kingdom to farthest continuous known level.
         self.__full_tax: is the full taxonomy string with all levels and implicit NA-levels.
+
+        NOTE: if a taxonomy has several invalid or missed levels between known levels, then
+        these taxonomies are considered as invalid. We assume if at any level a taxonomy is known, its
+        parents should also be known. Thus a taxonomy like tax=kingdom;phylum;unclass;unorder;;genus;species;
+        should be considered as invalid and only longest continuous known taxonomy should be considered which
+        is tax=kingdom;phylum;
         """
         self.delimiter = delimiter if delimiter else self.delimiter
         tax_reg_match = self.tax_regex.search(tax_str)
         # NOTE self.__tax_str is the cleaned original taxonomy string without implicit NA-levels.
         self.__tax_str = ''
+        self.__full_tax = ''
+        self.__orig_tax = ''
         if tax_reg_match:
             tax_str = tax_reg_match.group('tax')
             self.tax_tag = tax_reg_match.group('tax_tag') if tax_reg_match.group('tax_tag') else ''
-            self.__tax_str = self.get_clean_taxonomy(tax_str, self.delimiter)
-            self.__tax_str = str(self.get_tax_upto('species', only_knowns=True).tax_str)
-        # self.__full_tax = self.get_tax_upto('species', only_knowns=False).tax_str
+            self.__orig_tax = tax_str
+            self.full_tax = tax_str
 
     @property
     def full_tax(self) -> str:
-        self.__full_tax = self.get_tax_upto('species', only_knowns=False).tax_str
         return self.__full_tax
 
     @full_tax.setter
-    def full_tax(self, full_tax: str):
-        clean_full_tax = self.get_clean_taxonomy(full_tax, self.delimiter)
-        # full-level tax should start with self.__tax_str
-        if not clean_full_tax.startswith(self.__tax_str):
-            raise ValueError(
-                f"Full level taxonomy {full_tax} should start with {self.__tax_str}"
-            )
-        # full tax should have self.complete_taxonomy_length levels
-        # NOTE check
-        self.__full_tax = self.__class__(clean_full_tax).get_tax_upto(
-            'species',
-            only_knowns=False
-        ).full_tax
+    def full_tax(self, full_tax: str, delimiter: str = None):
+        # new full-level tax should not have any invalid taxonomies
+        self.delimiter = delimiter if delimiter else self.delimiter
+        self.__full_tax = self.get_clean_taxonomy(full_tax, self.delimiter, force_full_path=True)
+        self.__tax_str = self.get_clean_taxonomy(full_tax, self.delimiter, force_full_path=False)
+
 
     @property
     def tax_str(self) -> str:
@@ -94,9 +103,8 @@ class Taxonomy:
 
     @tax_str.setter
     def tax_str(self, tax_str: str):
-        cleaned_tax = self.get_clean_taxonomy(tax_str, self.delimiter)
-        self.__tax_str = cleaned_tax.tax_str
-        self.__full_tax = self.get_tax_upto('species', only_knowns=False)
+        self.__tax_str = self.get_clean_taxonomy(tax_str, self.delimiter, force_full_path=False)
+        self.__full_tax = self.get_clean_taxonomy(tax_str, self.delimiter, force_full_path=True)
 
     @property
     def tax_list(self) -> List[str]:
@@ -106,62 +114,84 @@ class Taxonomy:
         """
         return self._get_tax_list(self.delimiter)
 
-    def _get_tax_list(self, delimiter: str = None) -> List[str]:
+    @property
+    def full_tax_list(self) -> List[str]:
+        """
+        It returns the full taxonomy as a list of strings based on self.__full_tax.
+        NOTE self.__full_tax is the full taxonomy string with all levels and implicit NA-levels.
+        """
+        return self._get_tax_list(self.delimiter, full_level=True)
+
+    def _get_tax_list(self, delimiter: str = None, full_level: bool = False) -> List[str]:
         delimiter = delimiter if delimiter else self.delimiter
         # Any taxonomy with more than complete_taxonomy_length levels is truncated
+        if full_level:
+            return self.__full_tax.split(delimiter)[:self.complete_taxonomy_length]
         return self.__tax_str.split(delimiter)[:self.complete_taxonomy_length]
 
     @classmethod
     def get_clean_taxonomy(
             cls,
             tax_str: str,
-            delimiter: str = None) -> str:
-        # NOTE needs testing
+            delimiter: str = None,
+            force_full_path: bool = True) -> str:
+        # TODO needs testing
         delimiter = delimiter if delimiter else cls.delimiter
         clean_tax = []
-        for curr_tax in tax_str.split(delimiter):
+        clean_full_path = cls.hypo_full_tax_list.copy()
+        for ind, curr_tax in enumerate(tax_str.split(delimiter)):
+            valid_tax = True
             for invalid_tax in cls.invalid_tax_rgx:
                 invalid_tax_match = invalid_tax.search(curr_tax)
-                if not invalid_tax_match and curr_tax:
-                    clean_tax.append(curr_tax)
-                else:
+                if invalid_tax_match:
+                    valid_tax = False
                     break
+            if valid_tax and curr_tax:
+                clean_full_path[ind] = curr_tax
 
-        return delimiter.join(clean_tax)
+        clean_longest_continuous_path = []
+        for hypo_tax in clean_full_path:
+            if cls.unknown_tax_reg.match(hypo_tax):
+                break
+            clean_longest_continuous_path.append(hypo_tax)
+        if not force_full_path:
+            return delimiter.join(clean_longest_continuous_path)
+
+        return delimiter.join(clean_full_path)
 
     @property
     def kingdom(self):
-        return self.get_level('kingdom')
+        return self.full_tax_list[0]
 
     @property
     def phylum(self):
-        return self.get_level('phylum')
+        return self.full_tax_list[1]
 
     @property
     def class_(self):
-        return self.get_level('class')
+        return self.full_tax_list[2]
 
     @property
     def order(self):
-        return self.get_level('order')
+        return self.full_tax_list[3]
 
     @property
     def family(self):
-        return self.get_level('family')
+        return self.full_tax_list[4]
 
     @property
     def genus(self):
-        return self.get_level('genus')
+        return self.full_tax_list[5]
 
     @property
     def species(self):
-        return self.get_level('species')
+        return self.full_tax_list[6]
 
     def get_level(self, level: str) -> str:
         tax_level_ind = self.level_tax_map.index(level)
         if len(self.tax_list) > tax_level_ind:
             return self.tax_list[tax_level_ind]
-        return f'NA-{str(level).capitalize()}'
+        return f"NA-{str(level).capitalize()}"
 
     def set_level(self, level: str, value: str):
         # NOTE This is not consistent with the rest of the code
@@ -175,12 +205,9 @@ class Taxonomy:
             ) from ind_exc
         except Exception as e:
             raise e
-        cur_tax_list = self.get_tax_upto('species').tax_list
-        if len(self.tax_list) > tax_level_ind:
-            cur_tax_list[tax_level_ind] = value
-        else:
-            raise ValueError(f"Taxonomy level {level} is not available for {self.__tax_str}")
-        self.__full_tax = self.delimiter.join(cur_tax_list)
+        cur_tax_list = self.full_tax_list
+        cur_tax_list[tax_level_ind] = value
+        self.full_tax = self.delimiter.join(cur_tax_list)
 
     def is_known_upto(self, level: str) -> bool:
         """
@@ -193,7 +220,8 @@ class Taxonomy:
             self,
             level: str,
             only_knowns: bool = False,
-            top_down: bool = True) -> 'Taxonomy':
+            top_down: bool = True,
+            ret_type: str = 'Taxonomy') -> Union['Taxonomy', str]:
         """
         It returns taxonomy up to the given level.
             e.g: Kingdom;Phylum;Class;Order;Family;Genus;Species;ZOTU
@@ -228,7 +256,10 @@ class Taxonomy:
             tax_ += self.delimiter.join(sliced_tax)
         else:
             tax_ += self.delimiter.join(sliced_tax[::-1])
-        return Taxonomy(tax_)
+        if ret_type == 'Taxonomy':
+            return Taxonomy(tax_)
+        elif ret_type == 'str':
+            return tax_
 
     def _is_tax_complete(self) -> bool:
         # When 'ToBeDone' is in the taxonomy, it is not complete and set for completion by TIC
@@ -1096,7 +1127,6 @@ class TICUClust:
                 str(sorted_fasta_file),
             ]
             system_sub(cmd_to_call_list, force_log=True)
-            # print(" ".join(cmd_to_call_list))
         else:
             raise ValueError("Sorting should be by either 'size' or 'length'")
         onelinefasta(sorted_fasta_file)
