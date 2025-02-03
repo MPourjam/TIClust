@@ -3,7 +3,7 @@ import sys
 import os
 import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
-from simple_tic import Taxonomy, SeqID, SeqHeader, Sequence  # ,ZOTUFASTA
+import simple_tic as stic
 import logging
 
 
@@ -14,7 +14,7 @@ class TestTaxonomy:
 
     def test_taxonomy_initialization(self):
         tax_str = "tax=kingdom;phylum;class;order;family;genus;species;"
-        taxonomy = Taxonomy(tax_str)
+        taxonomy = stic.Taxonomy(tax_str)
         # log tax_str
         logging.info(taxonomy.tax_str)
         assert taxonomy.tax_str == "kingdom;phylum;class;order;family;genus;species"
@@ -28,67 +28,67 @@ class TestTaxonomy:
 
     def test_get_tax_upto(self):
         tax_str = "tax=kingdom;phylum;class;order;family;genus;species;"
-        taxonomy = Taxonomy(tax_str)
+        taxonomy = stic.Taxonomy(tax_str)
         assert taxonomy.get_tax_upto('family').tax_str == "kingdom;phylum;class;order;family"
 
     def test_clean_taxonomy(self):
         tax_str = "tax=kingdom;phylum;unclass;unorder;family;genus;species;"
-        taxonomy = Taxonomy(tax_str)
+        taxonomy = stic.Taxonomy(tax_str)
         assert taxonomy.tax_list == ["kingdom", "phylum"]
         assert str(taxonomy) == "tax=kingdom;phylum;NA-Class;NA-Order;family;genus;species"
         assert taxonomy.get_tax_upto('family', ret_type = 'str') == "kingdom;phylum;NA-Class;NA-Order;NA-Family"
         # missed family level so we cut from invalid or missed level
         tax_str = "tax=kingdom;phylum;class;order;;genus;species;"
-        taxonomy = Taxonomy(tax_str)
+        taxonomy = stic.Taxonomy(tax_str)
         assert taxonomy.tax_list == ["kingdom", "phylum", "class", "order"]
         assert str(taxonomy) == "tax=kingdom;phylum;class;order;NA-Family;genus;species"
 
     def test_full_tax(self):
         tax_str = "tax=kingdom;phylum;class;order;family;genus;species;"
-        taxonomy = Taxonomy(tax_str)
+        taxonomy = stic.Taxonomy(tax_str)
         assert taxonomy.full_tax == "kingdom;phylum;class;order;family;genus;species"
 
     def test_last_known_level(self):
         tax_str = "tax=kingdom;phylum;class;order;family;genus;species;"
-        taxonomy = Taxonomy(tax_str)
+        taxonomy = stic.Taxonomy(tax_str)
         assert taxonomy.last_known_level == "species"
         tax_str = "tax=kingdom;phylum;class;order;family;"
-        taxonomy = Taxonomy(tax_str)
+        taxonomy = stic.Taxonomy(tax_str)
         assert taxonomy.last_known_level == "family"
         tax_str = "tax=kingdom;phylum;;order;family;"
-        taxonomy = Taxonomy(tax_str)
+        taxonomy = stic.Taxonomy(tax_str)
         assert taxonomy.last_known_level == "phylum"
 
     def test_last_known_tax(self):
         tax_str = "tax=kingdomA;phylumA;classA;orderA;familyA;genusA;speciesA;"
-        taxonomy = Taxonomy(tax_str)
+        taxonomy = stic.Taxonomy(tax_str)
         assert taxonomy.last_known_tax == "speciesA"
         tax_str = "tax=kingdomA;phylumA;classA;orderA;familyA;;"
-        taxonomy = Taxonomy(tax_str)
+        taxonomy = stic.Taxonomy(tax_str)
         assert taxonomy.last_known_tax == "familyA"
         tax_str = "tax=kingdomA;phylumA;classA;;familyA;"
-        taxonomy = Taxonomy(tax_str)
+        taxonomy = stic.Taxonomy(tax_str)
         assert taxonomy.last_known_tax == "classA"
 
     def test_is_known_upto(self):
         tax_str = "tax=kingdom;phylum;class;order;family;genus;species;"
-        taxonomy = Taxonomy(tax_str)
+        taxonomy = stic.Taxonomy(tax_str)
         assert taxonomy.is_known_upto("family")
         assert taxonomy.is_known_upto("species")
         tax_str = "tax=kingdom;phylum;;order;;genus;;"
-        taxonomy = Taxonomy(tax_str)
+        taxonomy = stic.Taxonomy(tax_str)
         assert not taxonomy.is_known_upto("family")
         assert taxonomy.is_known_upto("phylum")
 
     def test_set_level(self):
         tax_str = "tax=kingdom;phylum;class;order;family;genus;species;"
-        taxonomy = Taxonomy(tax_str)
+        taxonomy = stic.Taxonomy(tax_str)
         taxonomy.set_level("family", "new_family")
         assert taxonomy.family == "new_family"
         assert taxonomy.full_tax == "kingdom;phylum;class;order;new_family;genus;species"
         assert taxonomy.tax_str == "kingdom;phylum;class;order;new_family;genus;species"
         tax_str = "tax=kingdom;phylum;class;order;;;;"
-        taxonomy = Taxonomy(tax_str)
+        taxonomy = stic.Taxonomy(tax_str)
         taxonomy.set_level("family", "new_family")
         assert taxonomy.family == "new_family"
         assert taxonomy.tax_str == "kingdom;phylum;class;order;new_family"
@@ -104,10 +104,10 @@ class TestSeqID:
 
     def test_seq_id_initialization(self):
         header = ">seq1 some description"
-        seq_id = SeqID(header)
+        seq_id = stic.SeqID(header)
         assert seq_id.head_id == "seq1"
         header = ">seq1 ; some; description"
-        seq_id = SeqID(header)
+        seq_id = stic.SeqID(header)
         assert seq_id.head_id == "seq1"
 
 
@@ -115,7 +115,7 @@ class TestSeqHeader:
 
     def test_seq_header_initialization(self):
         header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
-        seq_header = SeqHeader(header)
+        seq_header = stic.SeqHeader(header)
         assert str(seq_header.seq_id) == ">seq1"
         assert isinstance(seq_header.taxonomy, Taxonomy)
         assert seq_header.taxonomy.tax_str == "kingdom;phylum;class;order;family;genus;species"
@@ -127,27 +127,27 @@ class TestSequence:
     def test_sequence_initialization(self):
         header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
         sequence = "ATCGATCGATCG"
-        seq = Sequence(header, sequence)
+        seq = stic.Sequence(header, sequence)
         assert str(seq.header.seq_id) == ">seq1"
         assert seq.sequence == "ATCGATCGATCG"
 
     def test_is_sequence_correct(self):
         header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
         sequence = "ATCGATCGATCG"
-        seq = Sequence(header, sequence)
+        seq = stic.Sequence(header, sequence)
         assert seq.is_sequence_correct()
     
     def test_get_hash(self):
         header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
         sequence = "ATCGATCGATCG"
-        seq = Sequence(header, sequence)
+        seq = stic.Sequence(header, sequence)
         assert isinstance(seq.__hash__(), int)
         assert seq.__hash__() == hash(seq)
     
     def test_get_tax_upto(self):
         header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
         sequence = "ATCGATCGATCG"
-        seq = Sequence(header, sequence)
+        seq = stic.Sequence(header, sequence)
         assert seq.header.taxonomy.get_tax_upto('family', ret_type = "str") == "kingdom;phylum;class;order;family"
 
 
@@ -156,58 +156,80 @@ class TestSequenceCluster:
     def setup_method(self):
         self.header1 = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
         self.sequence1 = "ATCGATCGATCG"
-        self.seq1 = Sequence(self.header1, self.sequence1)
+        self.seq1 = stic.Sequence(self.header1, self.sequence1)
 
         self.header2 = ">seq2 tax=kingdom;phylum;class;order;family;genus;species;"
         self.sequence2 = "GCTAGCTAGCTA"
-        self.seq2 = Sequence(self.header2, self.sequence2)
+        self.seq2 = stic.Sequence(self.header2, self.sequence2)
 
         self.header3 = ">seq3 tax=kingdom;phylum;class;order;family;genus;species;"
         self.sequence3 = "CGTACGTACGTA"
-        self.seq3 = Sequence(self.header3, self.sequence3)
+        self.seq3 = stic.Sequence(self.header3, self.sequence3)
 
         self.header4 = ">seq4 tax=kingdom;phylum;class;order;family;genus;species;"
         self.sequence4 = "TACGTACGTACG"
-        self.seq4 = Sequence(self.header4, self.sequence4)
+        self.seq4 = stic.Sequence(self.header4, self.sequence4)
+
+        self.header5 = ">seq4 tax=kingdom;phylum;class;order;;genus;species;"
+        self.sequence5 = "TACGTACGTACG"
+        self.seq5 = stic.Sequence(self.header5, self.sequence5)
 
         self.sequences = [self.seq1, self.seq2, self.seq3, self.seq4]
+        self.non_homogenous_sequences = [self.seq1, self.seq2, self.seq3, self.seq5]
 
     def test_sequence_cluster_initialization(self):
-        cluster = SequenceCluster(self.sequences, centroid=self.seq1)
+        cluster = stic.SequenceCluster(self.sequences, centroid=self.seq1)
         assert cluster.centroid == self.seq1
         assert len(cluster.sequences) == 4
         assert cluster.homogenous_tax_group
+        non_homogenous_sequences = stic.SequenceCluster(
+            self.non_homogenous_sequences,
+            centroid=self.seq1,
+            force_homogeneity=False
+        )
+        assert not non_homogenous_sequences.homogenous_tax_group
+
 
     def test_add_sequence(self):
-        cluster = SequenceCluster(self.sequences, centroid=self.seq1)
+        cluster = stic.SequenceCluster(self.sequences, centroid=self.seq1)
         new_header = ">seq5 tax=kingdom;phylum;class;order;family;genus;species;"
         new_sequence = "ATCGATCGATCG"
-        new_seq = Sequence(new_header, new_sequence)
+        new_seq = stic.Sequence(new_header, new_sequence)
         cluster.add_sequence(new_seq)
         assert len(cluster.sequences) == 5
         assert cluster.homogenous_tax_group
 
     def test_set_level(self):
-        cluster = SequenceCluster(self.sequences, centroid=self.seq1)
+        cluster = stic.SequenceCluster(self.sequences, centroid=self.seq1)
         cluster.set_level("family", "new_family")
         for seq in cluster.sequences:
             assert seq.header.taxonomy.family == "new_family"
 
     def test_closest_common_ancestor(self):
-        cluster = SequenceCluster(self.sequences, centroid=self.seq1)
-        common_ancestor = cluster.closest_common_ancestor()
+        cluster = stic.SequenceCluster(self.sequences, centroid=self.seq1)
+        common_ancestor = cluster.closest_common_ancestor
         assert common_ancestor.tax_str == "kingdom;phylum;class;order;family;genus;species"
+        non_homogenous_sequences = stic.SequenceCluster(
+            self.non_homogenous_sequences,
+            centroid=self.seq1,
+            force_homogeneity=False
+        )
+        assert non_homogenous_sequences.closest_common_ancestor.tax_str == "kingdom;phylum;class;order"
 
     def test_is_homogenous_group(self):
-        assert SequenceCluster.is_homogenous_group(self.sequences, upto_level="species")
+        assert stic.SequenceCluster.is_homogenous_group(self.sequences, upto_level="species")
 
-    def test_write_to_fasta(self):
-        cluster = SequenceCluster(self.sequences, centroid=self.seq1)
-        output_file_path = pl.Path("test_output.fasta")
+    def test_cluster_size(self):
+        cluster = stic.SequenceCluster(self.sequences, centroid=self.seq1)
+        assert cluster.cluster_size == 4
+
+    def test_write_to_fasta(self, tmp_path):
+        cluster = stic.SequenceCluster(self.sequences, centroid=self.seq1)
+        output_file_path = tmp_path.joinpath("test_output.fasta")
         cluster.write_to_fasta(output_file_path)
         with open(output_file_path, 'r') as f:
             lines = f.readlines()
-        assert len(lines) == 10  # 5 sequences, each with a header and sequence line
+        assert len(lines) == 8  # 5 sequences, each with a header and sequence line
         output_file_path.unlink()  # Clean up the test file
 
 
@@ -361,7 +383,7 @@ class TestTaxedFastaFile:
         assert isinstance(taxonomies[0], Taxonomy)
 
     def test_filter_seq_by_tax(self):
-        taxonomy = Taxonomy("tax=kingdom;phylum;class;order;family;genus;species;")
+        taxonomy = stic.Taxonomy("tax=kingdom;phylum;class;order;family;genus;species;")
         sequences = self.taxed_fasta_file.filter_seq_by_tax(taxonomy)
         assert isinstance(sequences, list)
         assert len(sequences) == 4
@@ -504,7 +526,7 @@ class TestTICAnalysis:
         result_path.unlink()
 
     def test_grow_taxonomy(self):
-        taxonomy = Taxonomy("tax=kingdom;phylum;class;order;family;genus;species;")
+        taxonomy = stic.Taxonomy("tax=kingdom;phylum;class;order;family;genus;species;")
         clusters = self.tic_analysis.grow_taxonomy(taxonomy)
         assert isinstance(clusters, list)
         assert len(clusters) > 0

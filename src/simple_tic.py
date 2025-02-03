@@ -385,8 +385,8 @@ class SequenceCluster:
         'order',
         'family',
         'genus',
-        'species',
-        'ZOTU'
+        'species'
+        # 'ZOTU'
     ]
 
     def __init__(
@@ -433,7 +433,14 @@ class SequenceCluster:
             raise ValueError("The centroid should be one of the sequences in the group.")
         self.__centroid = centroid
 
+    @property
     def closest_common_ancestor(self) -> Taxonomy:
+        """
+        It returns the common ancestor of the sequences' taxonomies in the group.
+        """
+        return self.get_closest_common_ancestor()
+
+    def get_closest_common_ancestor(self) -> Taxonomy:
         """
         It returns the closest common ancestor of the sequences' taxonomies in the group.
         # NOTE what if the sequences have different taxonomies even from kingdom level?
@@ -442,16 +449,15 @@ class SequenceCluster:
         common_ancestor = []
         for tax_level in self.tax_levels:
             taxs_list = [
-                seq.header.taxonomy.get_tax_upto(tax_level, only_knowns=True)
+                seq.header.taxonomy.get_tax_upto(tax_level, only_knowns=True, ret_type='str')
                 # if tax_level='Bacteria' and is unknown, we get ''
                 for seq in self.sequences if seq.header.taxonomy and seq.header.taxonomy.is_known_upto('kingdom')
             ]
             if len(set(taxs_list)) == 1:
-                tax_obj = taxs_list[0]
-                common_ancestor.insert(0, tax_obj.get_level(tax_level))
+                common_ancestor = taxs_list[0]
             else:
                 break
-        return Taxonomy('tax=' + ';'.join(common_ancestor))
+        return Taxonomy('tax=' + common_ancestor)
 
     @property
     def tax(self) -> Taxonomy:
@@ -465,7 +471,7 @@ class SequenceCluster:
         if is_homogenous_group:
             tax_ = self.sequences[0].header.taxonomy.get_tax_upto('species', only_knowns=True)
         elif not is_homogenous_group:
-            tax_ = self.closest_common_ancestor()
+            tax_ = self.closest_common_ancestor
         return tax_
 
     def add_sequence(self, sequence: Sequence):
@@ -483,6 +489,10 @@ class SequenceCluster:
         self.homogenous_tax_group = will_be_homogenous
         self.__sequences.append(sequence)
         self.__centroid = None
+
+    @property
+    def cluster_size(self) -> int:
+        return len(self.sequences)
 
     def __str__(self):
         return f"{self.__class__.__name__}({self.tax}, ({len(self.sequences)})"
