@@ -16,9 +16,9 @@ class Taxonomy:
     output_delimiter = '___'
     delimiter = ';'  # Default delimiter for taxonomy
     # TODO check the regex below
-    tax_regex = re.compile(r"\s?(?P<tax_tag>tax=)?(?P<tax>([^;]*;)*[^;]*;?)$", re.IGNORECASE)
+    tax_tag = 'tax='
+    tax_regex = re.compile(r"\s?(?P<tax_tag>tax=)(?P<tax>([^;]*;)*[^;]*;?)$", re.IGNORECASE)
     complete_taxonomy_length = 8
-    tax_tag = ''
     level_tax_map = [
         'kingdom',
         'phylum',
@@ -61,7 +61,7 @@ class Taxonomy:
         "NA-Species"
     ]
 
-    def __init__(self, tax_str: str, delimiter: str = None):
+    def __init__(self, tax_str: str, delimiter: str = None, tax_tag: str = 'tax='):
         """
         self.__tax_str: is string representation of taxnomoy without implicit NA-levels and
         any invalid taxonomies from kingdom to farthest continuous known level.
@@ -252,13 +252,14 @@ class Taxonomy:
                     f"Taxonomy level {cur_level} is not available for {self.__tax_str}"
                 )
         tax_ = ""
-        # return value of this method is a Taxonomy object without tax_tag
+
         if top_down:
             tax_ += self.delimiter.join(sliced_tax)
         else:
             tax_ += self.delimiter.join(sliced_tax[::-1])
         if ret_type == 'Taxonomy':
-            return Taxonomy(tax_)
+            # NOTE tax_ is a string without tax_tag. Thus we add tax_tag to it.
+            return Taxonomy("tax=" + tax_)
         elif ret_type == 'str':
             return tax_
 
@@ -303,7 +304,7 @@ class Taxonomy:
 
 class SeqID:
 
-    seq_id_regex = re.compile(r"^(?P<seq_header>>\S+)\s*.*$", re.IGNORECASE)
+    seq_id_regex = re.compile(r"^>(?P<seq_header>\S+).*$", re.IGNORECASE)
 
     def __init__(self, header: str):
         seq_id_match = self.seq_id_regex.match(header)
@@ -323,6 +324,7 @@ class SeqHeader:
     def __init__(self, header: str):
         self.seq_id = SeqID(header)
         self.taxonomy = Taxonomy(header)
+        # print(self.taxonomy.tax_str)
         self.header = str(self.seq_id) + ' ' + str(self.taxonomy)
 
     def __repr__(self):

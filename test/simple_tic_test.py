@@ -15,10 +15,10 @@ class TestSeqID:
     def test_seq_id_initialization(self):
         header = ">seq1 some description"
         seq_id = SeqID(header)
-        assert seq_id.head_id == ">seq1"
+        assert seq_id.head_id == "seq1"
         header = ">seq1 ; some; description"
         seq_id = SeqID(header)
-        assert seq_id.head_id == ">seq1"
+        assert seq_id.head_id == "seq1"
 
 
 class TestSeqHeader:
@@ -27,7 +27,9 @@ class TestSeqHeader:
         header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
         seq_header = SeqHeader(header)
         assert str(seq_header.seq_id) == ">seq1"
-        assert str(seq_header.taxonomy) == "kingdom___phylum___class___order___family___genus___species"
+        assert isinstance(seq_header.taxonomy, Taxonomy)
+        assert seq_header.taxonomy.tax_str == "kingdom;phylum;class;order;family;genus;species"
+        assert str(seq_header.taxonomy) == "tax=kingdom;phylum;class;order;family;genus;species"
 
 
 class TestSequence:
