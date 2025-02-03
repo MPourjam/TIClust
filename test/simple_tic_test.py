@@ -10,73 +10,6 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
-class TestSeqID:
-
-    def test_seq_id_initialization(self):
-        header = ">seq1 some description"
-        seq_id = SeqID(header)
-        assert seq_id.head_id == "seq1"
-        header = ">seq1 ; some; description"
-        seq_id = SeqID(header)
-        assert seq_id.head_id == "seq1"
-
-
-class TestSeqHeader:
-
-    def test_seq_header_initialization(self):
-        header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
-        seq_header = SeqHeader(header)
-        assert str(seq_header.seq_id) == ">seq1"
-        assert isinstance(seq_header.taxonomy, Taxonomy)
-        assert seq_header.taxonomy.tax_str == "kingdom;phylum;class;order;family;genus;species"
-        assert str(seq_header.taxonomy) == "tax=kingdom;phylum;class;order;family;genus;species"
-
-
-class TestSequence:
-
-    def test_sequence_initialization(self):
-        header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
-        sequence = "ATCGATCGATCG"
-        seq = Sequence(header, sequence)
-        assert str(seq.header.seq_id) == ">seq1"
-        assert seq.sequence == "ATCGATCGATCG"
-
-    def test_is_sequence_correct(self):
-        header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
-        sequence = "ATCGATCGATCG"
-        seq = Sequence(header, sequence)
-        assert seq.is_sequence_correct()
-    
-    def test_get_hash(self):
-        header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
-        sequence = "ATCGATCGATCG"
-        seq = Sequence(header, sequence)
-        assert isinstance(seq.__hash__(), int)
-        assert seq.__hash__() == hash(seq)
-    
-    def test_get_tax_upto(self):
-        header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
-        sequence = "ATCGATCGATCG"
-        seq = Sequence(header, sequence)
-        assert seq.header.taxonomy.get_tax_upto('family', ret_type = "str") == "kingdom;phylum;class;order;family"
-
-
-
-# class TestZOTUFASTA:
-
-#     def test_get_taxonomies(self):
-#         fasta_file = "path/to/fasta_file.fasta"
-#         zotu_fasta = ZOTUFASTA(fasta_file)
-#         taxonomies = zotu_fasta.get_taxonomies()
-#         assert isinstance(taxonomies, list)
-
-#     def test_get_hash_table(self):
-#         fasta_file = "path/to/fasta_file.fasta"
-#         zotu_fasta = ZOTUFASTA(fasta_file)
-#         hash_table = zotu_fasta.get_hash_table()
-#         assert isinstance(hash_table, dict)
-
-
 class TestTaxonomy:
 
     def test_taxonomy_initialization(self):
@@ -165,6 +98,57 @@ class TestTaxonomy:
         assert taxonomy.tax_str == "kingdom;phylum;class;order;new_family"
         with pytest.raises(ValueError):
             taxonomy.set_level("ZOTU", "new_ZOTU")
+
+
+class TestSeqID:
+
+    def test_seq_id_initialization(self):
+        header = ">seq1 some description"
+        seq_id = SeqID(header)
+        assert seq_id.head_id == "seq1"
+        header = ">seq1 ; some; description"
+        seq_id = SeqID(header)
+        assert seq_id.head_id == "seq1"
+
+
+class TestSeqHeader:
+
+    def test_seq_header_initialization(self):
+        header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
+        seq_header = SeqHeader(header)
+        assert str(seq_header.seq_id) == ">seq1"
+        assert isinstance(seq_header.taxonomy, Taxonomy)
+        assert seq_header.taxonomy.tax_str == "kingdom;phylum;class;order;family;genus;species"
+        assert str(seq_header.taxonomy) == "tax=kingdom;phylum;class;order;family;genus;species"
+
+
+class TestSequence:
+
+    def test_sequence_initialization(self):
+        header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
+        sequence = "ATCGATCGATCG"
+        seq = Sequence(header, sequence)
+        assert str(seq.header.seq_id) == ">seq1"
+        assert seq.sequence == "ATCGATCGATCG"
+
+    def test_is_sequence_correct(self):
+        header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
+        sequence = "ATCGATCGATCG"
+        seq = Sequence(header, sequence)
+        assert seq.is_sequence_correct()
+    
+    def test_get_hash(self):
+        header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
+        sequence = "ATCGATCGATCG"
+        seq = Sequence(header, sequence)
+        assert isinstance(seq.__hash__(), int)
+        assert seq.__hash__() == hash(seq)
+    
+    def test_get_tax_upto(self):
+        header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
+        sequence = "ATCGATCGATCG"
+        seq = Sequence(header, sequence)
+        assert seq.header.taxonomy.get_tax_upto('family', ret_type = "str") == "kingdom;phylum;class;order;family"
 
 
 class TestSequenceCluster:
