@@ -238,59 +238,420 @@ class TestKingdomCluster:
     def setup_method(self):
         self.header1 = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
         self.sequence1 = "ATCGATCGATCG"
-        self.seq1 = Sequence(self.header1, self.sequence1)
+        self.seq1 = stic.Sequence(self.header1, self.sequence1)
 
         self.header2 = ">seq2 tax=kingdom;phylum;class;order;family;genus;species;"
         self.sequence2 = "GCTAGCTAGCTA"
-        self.seq2 = Sequence(self.header2, self.sequence2)
+        self.seq2 = stic.Sequence(self.header2, self.sequence2)
 
         self.header3 = ">seq3 tax=kingdom;phylum;class;order;family;genus;species;"
         self.sequence3 = "CGTACGTACGTA"
-        self.seq3 = Sequence(self.header3, self.sequence3)
+        self.seq3 = stic.Sequence(self.header3, self.sequence3)
 
         self.header4 = ">seq4 tax=kingdom;phylum;class;order;family;genus;species;"
         self.sequence4 = "TACGTACGTACG"
-        self.seq4 = Sequence(self.header4, self.sequence4)
+        self.seq4 = stic.Sequence(self.header4, self.sequence4)
 
         self.sequences = [self.seq1, self.seq2, self.seq3, self.seq4]
 
     def test_kingdom_cluster_initialization(self):
-        cluster = KingdomCluster(self.sequences, centroid=self.seq1)
+        cluster = stic.KingdomCluster(self.sequences, centroid=self.seq1)
         assert cluster.centroid == self.seq1
         assert len(cluster.sequences) == 4
         assert cluster.homogenous_tax_group
 
     def test_add_sequence(self):
-        cluster = KingdomCluster(self.sequences, centroid=self.seq1)
+        cluster = stic.KingdomCluster(self.sequences, centroid=self.seq1)
         new_header = ">seq5 tax=kingdom;phylum;class;order;family;genus;species;"
         new_sequence = "ATCGATCGATCG"
-        new_seq = Sequence(new_header, new_sequence)
+        new_seq = stic.Sequence(new_header, new_sequence)
         cluster.add_sequence(new_seq)
         assert len(cluster.sequences) == 5
         assert cluster.homogenous_tax_group
+        new_header = ">seq5 tax=Anotherkingdom;phylum;class;order;family;genus;species;"
+        new_sequence = "ATCGATCGATCG"
+        new_seq = stic.Sequence(new_header, new_sequence)
+        with pytest.raises(ValueError):
+            cluster.add_sequence(new_seq)
 
     def test_set_level(self):
-        cluster = KingdomCluster(self.sequences, centroid=self.seq1)
+        cluster = stic.KingdomCluster(self.sequences, centroid=self.seq1)
         cluster.set_level("family", "new_family")
         for seq in cluster.sequences:
             assert seq.header.taxonomy.family == "new_family"
 
     def test_closest_common_ancestor(self):
-        cluster = KingdomCluster(self.sequences, centroid=self.seq1)
-        common_ancestor = cluster.closest_common_ancestor()
+        cluster = stic.KingdomCluster(self.sequences, centroid=self.seq1)
+        common_ancestor = cluster.closest_common_ancestor
         assert common_ancestor.tax_str == "kingdom;phylum;class;order;family;genus;species"
 
     def test_is_homogenous_group(self):
-        assert KingdomCluster.is_homogenous_group(self.sequences, upto_level="kingdom")
+        assert stic.KingdomCluster.is_homogenous_group(self.sequences, upto_level="kingdom")
 
-    def test_write_to_fasta(self):
-        cluster = KingdomCluster(self.sequences, centroid=self.seq1)
-        output_file_path = pl.Path("test_output.fasta")
+    def test_write_to_fasta(self, tmp_path):
+        cluster = stic.KingdomCluster(self.sequences, centroid=self.seq1)
+        output_file_path = tmp_path.joinpath("test_output.fasta")
         cluster.write_to_fasta(output_file_path)
         with open(output_file_path, 'r') as f:
             lines = f.readlines()
-        assert len(lines) == 10  # 5 sequences, each with a header and sequence line
+        assert len(lines) == 8  # 5 sequences, each with a header and sequence line
         output_file_path.unlink()  # Clean up the test file
+
+
+class TestPhylumCluster:
+
+    def setup_method(self):
+        self.header1 = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence1 = "ATCGATCGATCG"
+        self.seq1 = stic.Sequence(self.header1, self.sequence1)
+
+        self.header2 = ">seq2 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence2 = "GCTAGCTAGCTA"
+        self.seq2 = stic.Sequence(self.header2, self.sequence2)
+
+        self.header3 = ">seq3 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence3 = "CGTACGTACGTA"
+        self.seq3 = stic.Sequence(self.header3, self.sequence3)
+
+        self.header4 = ">seq4 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence4 = "TACGTACGTACG"
+        self.seq4 = stic.Sequence(self.header4, self.sequence4)
+
+        self.sequences = [self.seq1, self.seq2, self.seq3, self.seq4]
+
+    def test_phylum_cluster_initialization(self):
+        cluster = stic.PhylumCluster(self.sequences, centroid=self.seq1)
+        assert cluster.centroid == self.seq1
+        assert len(cluster.sequences) == 4
+        assert cluster.homogenous_tax_group
+
+    def test_add_sequence(self):
+        cluster = stic.PhylumCluster(self.sequences, centroid=self.seq1)
+        new_header = ">seq5 tax=kingdom;phylum;class;order;family;genus;species;"
+        new_sequence = "ATCGATCGATCG"
+        new_seq = stic.Sequence(new_header, new_sequence)
+        cluster.add_sequence(new_seq)
+        assert len(cluster.sequences) == 5
+        assert cluster.homogenous_tax_group
+        new_header = ">seq5 tax=kingdom;Anotherphylum;class;order;family;genus;species;"
+        new_sequence = "ATCGATCGATCG"
+        new_seq = stic.Sequence(new_header, new_sequence)
+        with pytest.raises(ValueError):
+            cluster.add_sequence(new_seq)
+        new_header = ">seq5 tax=Anotherkingdom;phylum;class;order;family;genus;species;"
+        new_sequence = "ATCGATCGATCG"
+        new_seq = stic.Sequence(new_header, new_sequence)
+        with pytest.raises(ValueError):
+            cluster.add_sequence(new_seq)
+
+    def test_set_level(self):
+        cluster = stic.PhylumCluster(self.sequences, centroid=self.seq1)
+        cluster.set_level("family", "new_family")
+        for seq in cluster.sequences:
+            assert seq.header.taxonomy.family == "new_family"
+
+    def test_closest_common_ancestor(self):
+        cluster = stic.PhylumCluster(self.sequences, centroid=self.seq1)
+        common_ancestor = cluster.closest_common_ancestor
+        assert common_ancestor.tax_str == "kingdom;phylum;class;order;family;genus;species"
+
+    def test_is_homogenous_group(self):
+        assert stic.PhylumCluster.is_homogenous_group(self.sequences, upto_level="phylum")
+
+    def test_write_to_fasta(self, tmp_path):
+        cluster = stic.PhylumCluster(self.sequences, centroid=self.seq1)
+        output_file_path = tmp_path.joinpath("test_output.fasta")
+        cluster.write_to_fasta(output_file_path)
+        with open(output_file_path, 'r') as f:
+            lines = f.readlines()
+        assert len(lines) == 8  # 4 sequences, each with a header and sequence line
+        output_file_path.unlink()
+
+
+class TestClassCluster:
+    
+    def setup_method(self):
+        self.header1 = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence1 = "ATCGATCGATCG"
+        self.seq1 = stic.Sequence(self.header1, self.sequence1)
+
+        self.header2 = ">seq2 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence2 = "GCTAGCTAGCTA"
+        self.seq2 = stic.Sequence(self.header2, self.sequence2)
+
+        self.header3 = ">seq3 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence3 = "CGTACGTACGTA"
+        self.seq3 = stic.Sequence(self.header3, self.sequence3)
+
+        self.header4 = ">seq4 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence4 = "TACGTACGTACG"
+        self.seq4 = stic.Sequence(self.header4, self.sequence4)
+
+        self.sequences = [self.seq1, self.seq2, self.seq3, self.seq4]
+
+    def test_class_cluster_initialization(self):
+        cluster = stic.ClassCluster(self.sequences, centroid=self.seq1)
+        assert cluster.centroid == self.seq1
+        assert len(cluster.sequences) == 4
+        assert cluster.homogenous_tax_group
+
+    def test_add_sequence(self):
+        cluster = stic.ClassCluster(self.sequences, centroid=self.seq1)
+        new_header = ">seq5 tax=kingdom;phylum;class;order;family;genus;species;"
+        new_sequence = "ATCGATCGATCG"
+        new_seq = stic.Sequence(new_header, new_sequence)
+        cluster.add_sequence(new_seq)
+        assert len(cluster.sequences) == 5
+        assert cluster.homogenous_tax_group
+        new_header = ">seq5 tax=kingdom;phylum;Anotherclass;order;family;genus;species;"
+        new_sequence = "ATCGATCGATCG"
+        new_seq = stic.Sequence(new_header, new_sequence)
+        with pytest.raises(ValueError):
+            cluster.add_sequence(new_seq)
+        new_header = ">seq5 tax=Anotherkingdom;phylum;class;order;family;genus;species;"
+
+    def test_set_level(self):
+        cluster = stic.ClassCluster(self.sequences, centroid=self.seq1)
+        cluster.set_level("family", "new_family")
+        for seq in cluster.sequences:
+            assert seq.header.taxonomy.family == "new_family"
+
+    def test_closest_common_ancestor(self):
+        cluster = stic.ClassCluster(self.sequences, centroid=self.seq1)
+        common_ancestor = cluster.closest_common_ancestor
+        assert common_ancestor.tax_str == "kingdom;phylum;class;order;family;genus;species"
+
+
+class TestOrderCluster:
+    
+    def setup_method(self):
+        self.header1 = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence1 = "ATCGATCGATCG"
+        self.seq1 = stic.Sequence(self.header1, self.sequence1)
+
+        self.header2 = ">seq2 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence2 = "GCTAGCTAGCTA"
+        self.seq2 = stic.Sequence(self.header2, self.sequence2)
+
+        self.header3 = ">seq3 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence3 = "CGTACGTACGTA"
+        self.seq3 = stic.Sequence(self.header3, self.sequence3)
+
+        self.header4 = ">seq4 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence4 = "TACGTACGTACG"
+        self.seq4 = stic.Sequence(self.header4, self.sequence4)
+
+        self.sequences = [self.seq1, self.seq2, self.seq3, self.seq4]
+
+    def test_order_cluster_initialization(self):
+        cluster = stic.OrderCluster(self.sequences, centroid=self.seq1)
+        assert cluster.centroid == self.seq1
+        assert len(cluster.sequences) == 4
+        assert cluster.homogenous_tax_group
+
+    def test_add_sequence(self):
+        cluster = stic.OrderCluster(self.sequences, centroid=self.seq1)
+        new_header = ">seq5 tax=kingdom;phylum;class;order;family;genus;species;"
+        new_sequence = "ATCGATCGATCG"
+        new_seq = stic.Sequence(new_header, new_sequence)
+        cluster.add_sequence(new_seq)
+        assert len(cluster.sequences) == 5
+        assert cluster.homogenous_tax_group
+        new_header = ">seq5 tax=kingdom;phylum;class;Anotherorder;family;genus;species;"
+        new_sequence = "ATCGATCGATCG"
+        new_seq = stic.Sequence(new_header, new_sequence)
+        with pytest.raises(ValueError):
+            cluster.add_sequence(new_seq)
+        new_header = ">seq5 tax=Anotherkingdom;phylum;class;order;family;genus;species;"
+        new_sequence = "ATCGATCGATCG"
+        new_seq = stic.Sequence(new_header, new_sequence)
+        with pytest.raises(ValueError):
+            cluster.add_sequence(new_seq)
+
+    def test_set_level(self):
+        cluster = stic.OrderCluster(self.sequences, centroid=self.seq1)
+        cluster.set_level("family", "new_family")
+        for seq in cluster.sequences:
+            assert seq.header.taxonomy.family == "new_family"
+
+    def test_closest_common_ancestor(self):
+        cluster = stic.OrderCluster(self.sequences, centroid=self.seq1)
+        common_ancestor = cluster.closest_common_ancestor
+        assert common_ancestor.tax_str == "kingdom;phylum;class;order;family;genus;species"
+
+
+class TestFamilyCluster:
+    
+    def setup_method(self):
+        self.header1 = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence1 = "ATCGATCGATCG"
+        self.seq1 = stic.Sequence(self.header1, self.sequence1)
+
+        self.header2 = ">seq2 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence2 = "GCTAGCTAGCTA"
+        self.seq2 = stic.Sequence(self.header2, self.sequence2)
+
+        self.header3 = ">seq3 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence3 = "CGTACGTACGTA"
+        self.seq3 = stic.Sequence(self.header3, self.sequence3)
+
+        self.header4 = ">seq4 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence4 = "TACGTACGTACG"
+        self.seq4 = stic.Sequence(self.header4, self.sequence4)
+
+        self.sequences = [self.seq1, self.seq2, self.seq3, self.seq4]
+
+    def test_family_cluster_initialization(self):
+        cluster = stic.FamilyCluster(self.sequences, centroid=self.seq1)
+        assert cluster.centroid == self.seq1
+        assert len(cluster.sequences) == 4
+        assert cluster.homogenous_tax_group
+
+    def test_add_sequence(self):
+        cluster = stic.FamilyCluster(self.sequences, centroid=self.seq1)
+        new_header = ">seq5 tax=kingdom;phylum;class;order;family;genus;species;"
+        new_sequence = "ATCGATCGATCG"
+        new_seq = stic.Sequence(new_header, new_sequence)
+        cluster.add_sequence(new_seq)
+        assert len(cluster.sequences) == 5
+        assert cluster.homogenous_tax_group
+        new_header = ">seq5 tax=kingdom;phylum;class;order;Anotherfamily;genus;species;"
+        new_sequence = "ATCGATCGATCG"
+        new_seq = stic.Sequence(new_header, new_sequence)
+        with pytest.raises(ValueError):
+            cluster.add_sequence(new_seq)
+        new_header = ">seq5 tax=Anotherkingdom;phylum;class;order;family;"
+        new_sequence = "ATCGATCGATCG"
+        new_seq = stic.Sequence(new_header, new_sequence)
+        with pytest.raises(ValueError):
+            cluster.add_sequence(new_seq)
+
+    def test_set_level(self):
+        cluster = stic.FamilyCluster(self.sequences, centroid=self.seq1)
+        cluster.set_level("family", "new_family")
+        for seq in cluster.sequences:
+            assert seq.header.taxonomy.family == "new_family"
+
+    def test_closest_common_ancestor(self):
+        cluster = stic.FamilyCluster(self.sequences, centroid=self.seq1)
+        common_ancestor = cluster.closest_common_ancestor
+        assert common_ancestor.tax_str == "kingdom;phylum;class;order;family;genus;species"
+
+
+class TestGenusCluster:
+    
+    def setup_method(self):
+        self.header1 = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence1 = "ATCGATCGATCG"
+        self.seq1 = stic.Sequence(self.header1, self.sequence1)
+
+        self.header2 = ">seq2 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence2 = "GCTAGCTAGCTA"
+        self.seq2 = stic.Sequence(self.header2, self.sequence2)
+
+        self.header3 = ">seq3 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence3 = "CGTACGTACGTA"
+        self.seq3 = stic.Sequence(self.header3, self.sequence3)
+
+        self.header4 = ">seq4 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence4 = "TACGTACGTACG"
+        self.seq4 = stic.Sequence(self.header4, self.sequence4)
+
+        self.sequences = [self.seq1, self.seq2, self.seq3, self.seq4]
+
+    def test_genus_cluster_initialization(self):
+        cluster = stic.GenusCluster(self.sequences, centroid=self.seq1)
+        assert cluster.centroid == self.seq1
+        assert len(cluster.sequences) == 4
+        assert cluster.homogenous_tax_group
+
+    def test_add_sequence(self):
+        cluster = stic.GenusCluster(self.sequences, centroid=self.seq1)
+        new_header = ">seq5 tax=kingdom;phylum;class;order;family;genus;species;"
+        new_sequence = "ATCGATCGATCG"
+        new_seq = stic.Sequence(new_header, new_sequence)
+        cluster.add_sequence(new_seq)
+        assert len(cluster.sequences) == 5
+        assert cluster.homogenous_tax_group
+        new_header = ">seq5 tax=kingdom;phylum;class;order;family;Anothergenus;species;"
+        new_sequence = "ATCGATCGATCG"
+        new_seq = stic.Sequence(new_header, new_sequence)
+        with pytest.raises(ValueError):
+            cluster.add_sequence(new_seq)
+        new_header = ">seq5 tax=Anotherkingdom;phylum;class;order;family;genus;species;"
+        new_sequence = "ATCGATCGATCG"
+        new_seq = stic.Sequence(new_header, new_sequence)
+        with pytest.raises(ValueError):
+            cluster.add_sequence(new_seq)
+
+    def test_set_level(self):
+        cluster = stic.GenusCluster(self.sequences, centroid=self.seq1)
+        cluster.set_level("family", "new_family")
+        for seq in cluster.sequences:
+            assert seq.header.taxonomy.family == "new_family"
+
+    def test_closest_common_ancestor(self):
+        cluster = stic.GenusCluster(self.sequences, centroid=self.seq1)
+        common_ancestor = cluster.closest_common_ancestor
+        assert common_ancestor.tax_str == "kingdom;phylum;class;order;family;genus;species"
+
+
+class TestSpeciesCluster:
+    
+    def setup_method(self):
+        self.header1 = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence1 = "ATCGATCGATCG"
+        self.seq1 = stic.Sequence(self.header1, self.sequence1)
+
+        self.header2 = ">seq2 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence2 = "GCTAGCTAGCTA"
+        self.seq2 = stic.Sequence(self.header2, self.sequence2)
+
+        self.header3 = ">seq3 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence3 = "CGTACGTACGTA"
+        self.seq3 = stic.Sequence(self.header3, self.sequence3)
+
+        self.header4 = ">seq4 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.sequence4 = "TACGTACGTACG"
+        self.seq4 = stic.Sequence(self.header4, self.sequence4)
+
+        self.sequences = [self.seq1, self.seq2, self.seq3, self.seq4]
+
+    def test_species_cluster_initialization(self):
+        cluster = stic.SpeciesCluster(self.sequences, centroid=self.seq1)
+        assert cluster.centroid == self.seq1
+        assert len(cluster.sequences) == 4
+        assert cluster.homogenous_tax_group
+
+    def test_add_sequence(self):
+        cluster = stic.SpeciesCluster(self.sequences, centroid=self.seq1)
+        new_header = ">seq5 tax=kingdom;phylum;class;order;family;genus;species;"
+        new_sequence = "ATCGATCGATCG"
+        new_seq = stic.Sequence(new_header, new_sequence)
+        cluster.add_sequence(new_seq)
+        assert len(cluster.sequences) == 5
+        assert cluster.homogenous_tax_group
+        new_header = ">seq5 tax=kingdom;phylum;class;order;family;genus;Anotherspecies;"
+        new_sequence = "ATCGATCGATCG"
+        new_seq = stic.Sequence(new_header, new_sequence)
+        with pytest.raises(ValueError):
+            cluster.add_sequence(new_seq)
+        new_header = ">seq5 tax=Anotherkingdom;phylum;class;order;family;genus;species;"
+        new_sequence = "ATCGATCGATCG"
+        new_seq = stic.Sequence(new_header, new_sequence)
+        with pytest.raises(ValueError):
+            cluster.add_sequence(new_seq)
+
+    def test_set_level(self):
+        cluster = stic.SpeciesCluster(self.sequences, centroid=self.seq1)
+        cluster.set_level("family", "new_family")
+        for seq in cluster.sequences:
+            assert seq.header.taxonomy.family == "new_family"
+
+    def test_closest_common_ancestor(self):
+        cluster = stic.SpeciesCluster(self.sequences, centroid=self.seq1)
+        common_ancestor = cluster.closest_common_ancestor
+        assert common_ancestor.tax_str == "kingdom;phylum;class;order;family;genus;species"
 
 
 class TestFastaFile:
