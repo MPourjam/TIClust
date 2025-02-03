@@ -15,7 +15,8 @@ class Taxonomy:
 
     output_delimiter = '___'
     delimiter = ';'  # Default delimiter for taxonomy
-    # TODO check the regex below
+    # TODO tax_tag could be defined at initialization level for more flexibility.
+    # Add regex template and update the tax_regex to include the user-given tax_tag.
     tax_tag = 'tax='
     tax_regex = re.compile(r"\s?(?P<tax_tag>tax=)(?P<tax>([^;]*;)*[^;]*;?)$", re.IGNORECASE)
     complete_taxonomy_length = 8
@@ -61,7 +62,7 @@ class Taxonomy:
         "NA-Species"
     ]
 
-    def __init__(self, tax_str: str, delimiter: str = None, tax_tag: str = 'tax='):
+    def __init__(self, tax_str: str, delimiter: str = None):
         """
         self.__tax_str: is string representation of taxnomoy without implicit NA-levels and
         any invalid taxonomies from kingdom to farthest continuous known level.

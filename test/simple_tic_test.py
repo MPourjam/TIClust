@@ -46,6 +46,20 @@ class TestSequence:
         sequence = "ATCGATCGATCG"
         seq = Sequence(header, sequence)
         assert seq.is_sequence_correct()
+    
+    def test_get_hash(self):
+        header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
+        sequence = "ATCGATCGATCG"
+        seq = Sequence(header, sequence)
+        assert isinstance(seq.__hash__(), int)
+        assert seq.__hash__() == hash(seq)
+    
+    def test_get_tax_upto(self):
+        header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
+        sequence = "ATCGATCGATCG"
+        seq = Sequence(header, sequence)
+        assert seq.header.taxonomy.get_tax_upto('family', ret_type = "str") == "kingdom;phylum;class;order;family"
+
 
 
 # class TestZOTUFASTA:
