@@ -285,14 +285,14 @@ class Taxonomy:
         return known_tax.get_level(self.last_known_level)
 
     def __repr__(self):
-        return f'{self.__tax_str}'
+        return f'<{self.__class__.__name__}>{self.tax_str}'
 
     def __str__(self):
         str_tax = f"{self.tax_tag}{self.full_tax}"
         return f'{str_tax}'
 
     def __hash__(self):
-        return hash(self.__tax_str)
+        return hash((self.__tax_str, self.__full_tax, self.__orig_tax))
 
     def __bool__(self):
         return bool(self.__tax_str)
@@ -365,7 +365,7 @@ class Sequence:
         return hash((str(self.header), self.sequence.lower()))
 
     def __repr__(self):
-        return f"{self.header.seq_id} {self.sequence[:7]}...{self.sequence[-7:]}"
+        return f">{self.header.seq_id} {self.sequence[:7]}...{self.sequence[-7:]}"
 
     def __str__(self):
         return f"{self.header}\n{self.sequence}"
@@ -874,7 +874,9 @@ class TaxedFastaFile(FastaFile):
                 if curr_line.startswith('>'):
                     if seq_str:
                         seq_obj = Sequence(seq_header, seq_str)
-                        tax_seq_map.get(seq_obj.header.taxonomy).append(seq_obj)
+                        seq_list = tax_seq_map[seq_obj.header.taxonomy]
+                        seq_list.append(seq_obj)
+                        tax_seq_map[seq_obj.header.taxonomy] = seq_list
                         seq_str = ''
                     seq_header = curr_line
                 else:
@@ -882,7 +884,9 @@ class TaxedFastaFile(FastaFile):
                 curr_line = fasta.readline().strip()
             if seq_str:
                 seq_obj = Sequence(seq_header, seq_str)
-                tax_seq_map[seq_obj.header.taxonomy] = seq_obj
+                seq_list = tax_seq_map[seq_obj.header.taxonomy]
+                seq_list.append(seq_obj)
+                tax_seq_map[seq_obj.header.taxonomy] = seq_list
         return tax_seq_map
 
     def filter_tax_set_at_last_known_level(self, level: str) -> List[Taxonomy]:

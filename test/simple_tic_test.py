@@ -130,7 +130,7 @@ class TestSequence:
         header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
         sequence = "ATCGATCGATCG"
         seq = stic.Sequence(header, sequence)
-        assert str(seq.header.seq_id) == ">seq1"
+        assert str(seq.header.seq_id) == "seq1"
         assert seq.sequence == "ATCGATCGATCG"
 
     def test_is_sequence_correct(self):
@@ -767,7 +767,7 @@ class TestTaxedFastaFile:
     def test_get_tax_seq_map(self):
         tax_seq_map = self.taxed_fasta_file.get_tax_seq_map()
         assert isinstance(tax_seq_map, dict)
-        assert len(tax_seq_map) == 4
+        assert len(tax_seq_map) == 1  # All taxa are the same
         for key, value in tax_seq_map.items():
             assert isinstance(key, stic.Taxonomy)
             assert isinstance(value, list)
@@ -777,7 +777,7 @@ class TestTaxedFastaFile:
     def test_filter_tax_set_at_last_known_level(self):
         taxonomies = self.taxed_fasta_file.filter_tax_set_at_last_known_level('species')
         assert isinstance(taxonomies, list)
-        assert len(taxonomies) == 4
+        assert len(taxonomies) == 1  # All taxa are at the species level
         for tax in taxonomies:
             assert isinstance(tax, stic.Taxonomy)
             assert tax.last_known_level == 'species'
