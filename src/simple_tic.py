@@ -5,7 +5,7 @@ import re
 import tempfile
 import pathlib as pl
 from collections import defaultdict, OrderedDict
-from typing import List, Dict, Tuple, Set, Optional, Union
+from typing import List, Dict, Tuple, Optional, Union
 from concurrent.futures import ThreadPoolExecutor
 # import tqdm
 from tic_helper import system_sub, onelinefasta
@@ -69,10 +69,11 @@ class Taxonomy:
         self.__full_tax: is the full taxonomy string with all levels and implicit NA-levels.
 
         NOTE: if a taxonomy has several invalid or missed levels between known levels, then
-        these taxonomies are considered as invalid. We assume if at any level a taxonomy is known, its
-        parents should also be known. Thus a taxonomy like tax=kingdom;phylum;unclass;unorder;;genus;species;
-        should be considered as invalid and only longest continuous known taxonomy should be considered which
-        is tax=kingdom;phylum;
+        these taxonomies are considered as invalid. We assume if at any level a taxonomy is 
+        known, its parents should also be known. Thus a taxonomy like 
+        tax=kingdom;phylum;unclass;unorder;;genus;species;
+        should be considered as invalid and only longest continuous known taxonomy should be 
+        considered which is tax=kingdom;phylum;
         """
         self.delimiter = delimiter if delimiter else self.delimiter
         tax_reg_match = self.tax_regex.search(tax_str)
@@ -305,7 +306,7 @@ class Taxonomy:
 
 class SeqID:
 
-    seq_id_regex = re.compile(r"^>(?P<seq_header>\S+).*$", re.IGNORECASE)
+    seq_id_regex = re.compile(r"^>(?P<seq_header>[\S^;]+).*$", re.IGNORECASE)
 
     def __init__(self, header: str):
         seq_id_match = self.seq_id_regex.match(header)
@@ -317,7 +318,7 @@ class SeqID:
         return f">{self.head_id}"
 
     def __str__(self):
-        return self.__repr__()
+        return f"{self.head_id}"
 
 
 class SeqHeader:
@@ -326,7 +327,7 @@ class SeqHeader:
         self.seq_id = SeqID(header)
         self.taxonomy = Taxonomy(header)
         # print(self.taxonomy.tax_str)
-        self.header = str(self.seq_id) + ' ' + str(self.taxonomy)
+        self.header = '>' + str(self.seq_id) + ' ' + str(self.taxonomy)
 
     def __repr__(self):
         return self.header
@@ -814,7 +815,7 @@ class FastaFile:
                 if curr_line.startswith('>'):
                     if seq_str:
                         seq_obj = Sequence(seq_header, seq_str)
-                        if seq_obj.header.seq_id in seq_ids_list:
+                        if str(seq_obj.header.seq_id) in seq_ids_list:
                             output_list.append(seq_obj)
                         seq_str = ''
                     seq_header = curr_line
@@ -823,106 +824,6 @@ class FastaFile:
                 curr_line = fasta_fio.readline().strip()
 
         return output_list
-
-
-class TreeNode:
-
-    def __init__(self, node_name: str, parent_name: 'TreeNode' = None):
-        self.node_name = node_name
-        self.parent_name = parent_name
-        self.children = set()
-
-    def add_child(self, child: 'TreeNode'):
-        self.children.add(child)
-
-    def get_parents(self) -> Tuple['TreeNode']:
-        parents = []
-        parent = self.parent_name
-        while parent:
-            parents.append(parent)
-            parent = parent.parent_name
-        return tuple(parents)
-
-    def __repr__(self):
-        return self.node_name
-
-    def __str__(self):
-        return self.__repr__()
-
-    def __hash__(self):
-        return hash(self.node_name)
-
-    def __eq__(self, other):
-        return self.node_name == other.node_name
-
-
-class TaxononomyTree:
-
-    delimiter = ';'
-
-    def __init__(self, taxonomies: List[Taxonomy]):
-        self.tree_lineages = list(set(taxonomies))
-        self.root = self.plant_tree()
-
-    def plant_tree(self) -> TreeNode:
-        root = TreeNode('root')
-        for tax in self.tree_lineages:
-            tax_levels = tax.tax_list
-            parent = root
-            for level in tax_levels:
-                child = TreeNode(level, parent)
-                parent.add_child(child)
-                parent = child
-        return root
-
-    def _get_nodes(self) -> Set[TreeNode]:
-        nodes = set()
-        def get_nodes(node: TreeNode):
-            nodes.add(node)
-            for child in node.children:
-                get_nodes(child)
-        get_nodes(self.root)
-        return nodes
-
-    def find_node(self, node_name: str) -> TreeNode:
-        pass
-
-    def traverse_tree(self, node: TreeNode = None) -> List[List[TreeNode]]:
-        node = node if node else self.root
-        result = [[node]]
-        if not node.children:
-            return result
-        for child in node.children:
-            for path in self.traverse_tree(child):
-                result.append([node] + path)
-        return result
-
-    def get_lineages(self) -> List[Taxonomy]:
-        lineages_list = self.traverse_tree()
-        lineages_tax = []
-        for lineage in lineages_list:
-            tax_str = self.delimiter.join([node.node_name for node in lineage])
-            tax = Taxonomy(tax_str)
-            lineages_tax.append(tax)
-        return lineages_tax
-
-    def add_lineage(self, taxonomy: Taxonomy):
-        if taxonomy not in self.tree_lineages:
-            self.tree_lineages.append(taxonomy)
-
-        for level in taxonomy.tax_list:
-            if not level:
-                continue
-            if not any(True for node in self._get_nodes() if node.node_name == level):
-                parent = self.root
-                for node_name in taxonomy.tax_list:
-                    child = TreeNode(node_name, parent)
-                    parent.add_child(child)
-                    parent = child
-
-    def node_exist(self, node_obj: TreeNode) -> bool:
-        nodes = self._get_nodes()
-        return any(True for node in nodes if node.node_name == node_obj.node_name)
 
 
 class TaxedFastaFile(FastaFile):
