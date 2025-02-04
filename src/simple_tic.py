@@ -326,7 +326,6 @@ class SeqHeader:
     def __init__(self, header: str):
         self.seq_id = SeqID(header)
         self.taxonomy = Taxonomy(header)
-        # print(self.taxonomy.tax_str)
         self.header = '>' + str(self.seq_id) + ' ' + str(self.taxonomy)
 
     def __repr__(self):
@@ -369,6 +368,9 @@ class Sequence:
 
     def __str__(self):
         return f"{self.header}\n{self.sequence}"
+    
+    def __eq__(self, other):
+        return self.__hash__() == other.__hash__()
 
 
 class SequenceCluster:
@@ -403,7 +405,11 @@ class SequenceCluster:
             raise ValueError("Forcing homogeneity but the sequences are not homogenous.")
         self.homogenous_tax_group = will_be_homogenous
         self.__sequences = sequences
-        self.centroid = centroid
+        if not centroid and will_be_homogenous:
+            self.__centroid = sequences[0]
+        else:
+            self.__centroid = centroid
+        
 
     @property
     def sequences(self) -> List[Sequence]:
@@ -1038,7 +1044,8 @@ class TICUClust:
         """
          # create a temporary directory for UClust in the uclust_work_dir
         with tempfile.TemporaryDirectory(dir=self.uclust_work_dir) as temp_cluster_dir:
-            run_dir = pl.Path(temp_cluster_dir.name)
+            run_dir = pl.Path(temp_cluster_dir).absolute().resolve()
+        run_dir.mkdir(parents=True, exist_ok=True)
         sequence_cluster = SequenceCluster(sequences, force_homogeneity=False)
         input_fasta_path = run_dir.joinpath("input.fasta").absolute()
         sequence_cluster.write_to_fasta(input_fasta_path)

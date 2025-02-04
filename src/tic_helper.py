@@ -165,19 +165,23 @@ def loud_subprocess(cmd_args_list: list, shell_bool: bool = False, cap_output: b
 
 
 class LogPrint(logging.Logger):
-    def debug(msg):
+
+    def __init__(self, name):
+        super().__init__(name)
+
+    def debug(self, msg):
         print(f"\033[95m{msg}\033[0m")
 
-    def info(msg):
+    def info(self, msg):
         print(f"\033[94m{msg}\033[0m")
 
-    def warning(msg):
+    def warning(self, msg):
         print(f"\033[93m{msg}\033[0m")
 
-    def error(msg):
+    def error(self, msg):
         print(f"\033[91m{msg}\033[0m")
 
-    def critical(msg):
+    def critical(self, msg):
         print(f"\033[1m\033[91m{msg}\033[0m")
 
 

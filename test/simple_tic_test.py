@@ -4,6 +4,7 @@ import os
 import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 import simple_tic as stic
+import tic_helper as tich
 import logging
 import tempfile
 import pathlib as pl
@@ -129,7 +130,7 @@ class TestSequence:
     def test_sequence_initialization(self):
         header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
         sequence = "ATCGATCGATCG"
-        seq = stic.Sequence(header, sequence)
+        seq = stic.stic.Sequence(header, sequence)
         assert str(seq.header.seq_id) == "seq1"
         assert seq.sequence == "ATCGATCGATCG"
 
@@ -151,6 +152,16 @@ class TestSequence:
         sequence = "ATCGATCGATCG"
         seq = stic.Sequence(header, sequence)
         assert seq.header.taxonomy.get_tax_upto('family', ret_type = "str") == "kingdom;phylum;class;order;family"
+
+    def test_equal(self):
+        header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
+        sequence = "ATCGATCGATCG"
+        seq1 = stic.Sequence(header, sequence)
+        seq2 = stic.Sequence(header, sequence)
+        assert seq1 == seq2
+        header = ">seq2 tax=kingdom;phylum;class;order;family;genus;species;"
+        seq3 = stic.Sequence(header, sequence)
+        assert seq1 != seq3
 
 
 class TestSequenceCluster:
@@ -783,75 +794,68 @@ class TestTaxedFastaFile:
             assert tax.last_known_level == 'species'
 
 
-
 class TestTICUClust:
 
     def setup_method(self):
-        self.usearch_bin = pl.Path('./bin/usearch_linux_x86_12.0-beta').absolute()
+        self.usearch_bin = pl.Path('../bin/usearch11.0.667_i86linux64').absolute()
         self.uclust_work_dir = pl.Path('./Uclust-WD').absolute()
-        self.ticuclust = TICUClust(self.usearch_bin, self.uclust_work_dir)
-        self.header1 = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.uclust_work_dir.mkdir(exist_ok=True)
+        self.ticuclust = stic.TICUClust(self.usearch_bin, self.uclust_work_dir)
+        self.header1 = ">seq1 tax=kingdomA;phylumA;classA;orderA"
         self.sequence1 = "ATCGATCGATCG"
-        self.seq1 = Sequence(self.header1, self.sequence1)
+        self.seq1 = stic.Sequence(self.header1, self.sequence1)
 
-        self.header2 = ">seq2 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.header2 = ">seq2 tax=kingdomA;phylumA;classA;orderA"
         self.sequence2 = "GCTAGCTAGCTA"
-        self.seq2 = Sequence(self.header2, self.sequence2)
+        self.seq2 = stic.Sequence(self.header2, self.sequence2)
 
-        self.header3 = ">seq3 tax=kingdom;phylum;class;order;family;genus;species;"
+        self.header3 = ">seq3 tax=kingdomA;phylumA;classA;orderA"
         self.sequence3 = "CGTACGTACGTA"
-        self.seq3 = Sequence(self.header3, self.sequence3)
+        self.seq3 = stic.Sequence(self.header3, self.sequence3)
 
-        self.header4 = ">seq4 tax=kingdom;phylum;class;order;family;genus;species;"
-        self.sequence4 = "TACGTACGTACG"
-        self.seq4 = Sequence(self.header4, self.sequence4)
+        self.header4 = ">seq4 tax=kingdomA;phylumA;classA;orderA"
+        self.sequence4 = "TACGTACGTACGAACTG"
+        self.seq4 = stic.Sequence(self.header4, self.sequence4)
 
-        self.sequences = [self.seq1, self.seq2, self.seq3, self.seq4]
+        self.sequences = [self.seq4, self.seq1, self.seq2, self.seq3]
 
     def test_run_uclust(self):
         with tempfile.TemporaryDirectory(dir=self.uclust_work_dir) as temp_cluster_dir:
             run_dir = pl.Path(temp_cluster_dir)
             input_fasta_path = run_dir.joinpath("input.fasta").absolute()
-            sequence_cluster = SequenceCluster(self.sequences, force_homogeneity=False)
+            sequence_cluster = stic.OrderCluster(self.sequences)
             sequence_cluster.write_to_fasta(input_fasta_path)
-            sorted_seq_file = self.ticuclust.sort_seqs(str(input_fasta_path), by="length")
-            centroids_file = input_fasta_path.parent.joinpath("cluster_centroids.fasta")
-            uc_file = input_fasta_path.parent.joinpath("otu_clusters.uc")
-            cmd_to_call = [
-                str(self.usearch_bin),
-                "-cluster_smallmem",
-                str(sorted_seq_file),
-                "-centroids",
-                str(centroids_file),
-                "-uc",
-                str(uc_file),
-                "-id",
-                str(0.987),
-                "-strand",
-                "both",
-            ]
-            system_sub(cmd_to_call, force_log=True)
-            onelinefasta(centroids_file)
-            centroid_cluster_dict = self.ticuclust.parse_uc_file(str(uc_file))
-            assert isinstance(centroid_cluster_dict, dict)
+            file_pair_tuple = self.ticuclust.run_uclust(self.sequences, 0.987)
+            in_fasta_file_path, centroid_seq_dict = file_pair_tuple
+            assert in_fasta_file_path.exists()
+            assert isinstance(centroid_seq_dict, dict)
+            assert len(centroid_seq_dict) == 4
+            # first element in the centroid_seq_dict should be self.seq4 as it
+            # is the longest sequence
+            assert list(centroid_seq_dict.keys())[0] == str(self.seq4.header)[1:]
 
     def test_parse_uc_file(self):
-        uc_content = """
-            S\t*\t*\t*\t*\t*\t*\t*\tseq1\t*
-            H\t*\t*\t*\t*\t*\t*\t*\tseq2\tseq1
-            H\t*\t*\t*\t*\t*\t*\t*\tseq3\tseq1
-            H\t*\t*\t*\t*\t*\t*\t*\tseq4\tseq1
+        uc_content = """\
+            S\t0\t17\t*\t.\t*\t*\t*\tseq4 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*\n\
+            S\t1\t12\t*\t.\t*\t*\t*\tseq3 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*\n\
+            S\t2\t12\t*\t.\t*\t*\t*\tseq2 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\*\n\
+            S\t3\t12\t*\t.\t*\t*\t*\tseq1 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*\n\
+            C\t0\t1\t*\t*\t*\t*\t*\tseq4 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*\n\
+            C\t1\t1\t*\t*\t*\t*\t*\tseq3 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*\n\
+            C\t2\t1\t*\t*\t*\t*\t*\tseq2 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*\n\
+            C\t3\t1\t*\t*\t*\t*\t*\tseq1 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*\n\
         """
         with tempfile.NamedTemporaryFile(delete=False) as uc_file:
             uc_file.write(uc_content.encode('utf-8'))
             uc_file_path = uc_file.name
         uc_dict = self.ticuclust.parse_uc_file(uc_file_path)
         assert isinstance(uc_dict, dict)
-        assert len(uc_dict) == 1
-        assert 'seq1' in uc_dict
-        assert len(uc_dict['seq1']) == 4
+        print(f"uc_file_path: {uc_file_path}")
+        assert len(uc_dict) == 4 # 4 sequences and each is one cluster
+        assert list(uc_dict.values())[0][0] == "seq4 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species"
         pl.Path(uc_file_path).unlink()
 
+    # TODO: check the rest of the methods
     def test_get_sequences_clusters(self):
         clusters = self.ticuclust.get_sequences_clusters(self.sequences, 0.987)
         assert isinstance(clusters, list)
@@ -948,7 +952,6 @@ class TestTICAnalysis:
             lines = f.readlines()
         assert len(lines) > 0
         result_path.unlink()
-
 
 
 if __name__ == '__main__':
