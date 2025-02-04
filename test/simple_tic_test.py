@@ -5,6 +5,8 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 import simple_tic as stic
 import logging
+import tempfile
+import pathlib as pl
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -657,20 +659,19 @@ class TestSpeciesCluster:
 class TestFastaFile:
 
     def setup_method(self):
-        self.fasta_content = """
-            >seq1 tax=kingdom;phylum;class;order;family;genus;species;
-            ATCGATCGATCG
-            >seq2 tax=kingdom;phylum;class;order;family;genus;species;
-            GCTAGCTAGCTA
-            >seq3 tax=kingdom;phylum;class;order;family;genus;species;
-            CGTACGTACGTA
-            >seq4 tax=kingdom;phylum;class;order;family;genus;species;
-            TACGTACGTACG
+        self.fasta_content = """>seq1 tax=kingdom;phylum;class;order;family;genus;species;
+        ATCGATCGATCG
+        >seq2 tax=kingdom;phylum;class;order;family;genus;species;
+        GCTAGCTAGCTA
+        >seq3 tax=kingdom;phylum;class;order;family;genus;species;
+        CGTACGTACGTA
+        >seq4 tax=kingdom;phylum;class;order;family;genus;species;
+        TACGTACGTACG
         """
         self.fasta_file_path = pl.Path("test_fasta_file.fasta")
         with open(self.fasta_file_path, 'w') as f:
             f.write(self.fasta_content)
-        self.fasta_file = FastaFile(self.fasta_file_path)
+        self.fasta_file = stic.FastaFile(self.fasta_file_path)
 
     def teardown_method(self):
         self.fasta_file_path.unlink()
@@ -679,29 +680,37 @@ class TestFastaFile:
         hash_table = self.fasta_file.get_hash_table()
         assert isinstance(hash_table, dict)
         assert len(hash_table) == 4
+        for key, value in hash_table.items():
+            assert isinstance(key, int)
+            assert isinstance(value, stic.SeqHeader)
 
     def test_get_seq_headers(self):
         headers = self.fasta_file.get_seq_headers()
         assert isinstance(headers, list)
         assert len(headers) == 4
-        assert isinstance(headers[0], SeqHeader)
+        for header in headers:
+            assert isinstance(header, stic.SeqHeader)
 
     def test_get_sequences(self):
         sequences = self.fasta_file.get_sequences()
         assert isinstance(sequences, list)
         assert len(sequences) == 4
-        assert isinstance(sequences[0], Sequence)
+        for seq in sequences:
+            assert isinstance(seq, stic.Sequence)
 
     def test_filter_seq_by_hash(self):
         sequences = self.fasta_file.get_sequences()
         hash_list = [hash(seq) for seq in sequences[:2]]
         filtered_sequences = self.fasta_file.filter_seq_by_hash(hash_list)
+        assert isinstance(filtered_sequences, list)
         assert len(filtered_sequences) == 2
-        assert filtered_sequences[0].sequence == sequences[0].sequence
+        for seq in filtered_sequences:
+            assert isinstance(seq, stic.Sequence)
+            assert hash(seq) in hash_list
 
-    def test_write_to_fasta_file(self):
+    def test_write_to_fasta_file(self, tmp_path):
         sequences = self.fasta_file.get_sequences()
-        output_file_path = pl.Path("test_output.fasta")
+        output_file_path = tmp_path.joinpath("output.fasta")
         self.fasta_file.write_to_fasta_file(output_file_path, sequences)
         with open(output_file_path, 'r') as f:
             lines = f.readlines()
@@ -709,61 +718,70 @@ class TestFastaFile:
         output_file_path.unlink()
 
     def test_get_seq_by_seq_id(self):
-        seq_ids_list = [">seq1", ">seq3"]
+        seq_ids_list = ["seq1", "seq3"]
         sequences = self.fasta_file.get_seq_by_seq_id(seq_ids_list)
+        assert isinstance(sequences, list)
         assert len(sequences) == 2
-        assert sequences[0].header.seq_id.head_id == ">seq1"
-        assert sequences[1].header.seq_id.head_id == ">seq3"
+        for seq in sequences:
+            assert isinstance(seq, stic.Sequence)
+            assert str(seq.header.seq_id) in seq_ids_list
 
 
 class TestTaxedFastaFile:
 
     def setup_method(self):
-        self.fasta_content = """
-            >seq1 tax=kingdom;phylum;class;order;family;genus;species;
-            ATCGATCGATCG
-            >seq2 tax=kingdom;phylum;class;order;family;genus;species;
-            GCTAGCTAGCTA
-            >seq3 tax=kingdom;phylum;class;order;family;genus;species;
-            CGTACGTACGTA
-            >seq4 tax=kingdom;phylum;class;order;family;genus;species;
-            TACGTACGTACG
+        self.fasta_content = """>seq1 tax=kingdom;phylum;class;order;family;genus;species;
+        ATCGATCGATCG
+        >seq2 tax=kingdom;phylum;class;order;family;genus;species;
+        GCTAGCTAGCTA
+        >seq3 tax=kingdom;phylum;class;order;family;genus;species;
+        CGTACGTACGTA
+        >seq4 tax=kingdom;phylum;class;order;family;genus;species;
+        TACGTACGTACG
         """
         self.fasta_file_path = pl.Path("test_taxed_fasta_file.fasta")
         with open(self.fasta_file_path, 'w') as f:
             f.write(self.fasta_content)
-        self.taxed_fasta_file = TaxedFastaFile(self.fasta_file_path)
+        self.taxed_fasta_file = stic.TaxedFastaFile(self.fasta_file_path)
 
     def teardown_method(self):
         self.fasta_file_path.unlink()
 
-    def test_get_seq_taxonomies(self):
-        taxonomies = self.taxed_fasta_file.tax_obj_list
-        assert isinstance(taxonomies, list)
-        assert len(taxonomies) == 4
-        assert isinstance(taxonomies[0], Taxonomy)
+    def test_get_tax_obj_list(self):
+        tax_obj_list = self.taxed_fasta_file.tax_obj_list
+        assert isinstance(tax_obj_list, list)
+        assert len(tax_obj_list) == 4
+        for tax in tax_obj_list:
+            assert isinstance(tax, stic.Taxonomy)
 
     def test_filter_seq_by_tax(self):
-        taxonomy = stic.Taxonomy("tax=kingdom;phylum;class;order;family;genus;species;")
+        tax_str = "tax=kingdom;phylum;class;order;family;genus;species;"
+        taxonomy = stic.Taxonomy(tax_str)
         sequences = self.taxed_fasta_file.filter_seq_by_tax(taxonomy)
         assert isinstance(sequences, list)
         assert len(sequences) == 4
-        assert isinstance(sequences[0], Sequence)
+        for seq in sequences:
+            assert isinstance(seq, stic.Sequence)
+            assert seq.header.taxonomy == taxonomy
 
     def test_get_tax_seq_map(self):
         tax_seq_map = self.taxed_fasta_file.get_tax_seq_map()
         assert isinstance(tax_seq_map, dict)
         assert len(tax_seq_map) == 4
         for key, value in tax_seq_map.items():
-            assert isinstance(key, Taxonomy)
-            assert isinstance(value, Sequence)
+            assert isinstance(key, stic.Taxonomy)
+            assert isinstance(value, list)
+            for seq in value:
+                assert isinstance(seq, stic.Sequence)
 
     def test_filter_tax_set_at_last_known_level(self):
         taxonomies = self.taxed_fasta_file.filter_tax_set_at_last_known_level('species')
         assert isinstance(taxonomies, list)
         assert len(taxonomies) == 4
-        assert isinstance(taxonomies[0], Taxonomy)
-        assert taxonomies[0].last_known_level == 'species'
+        for tax in taxonomies:
+            assert isinstance(tax, stic.Taxonomy)
+            assert tax.last_known_level == 'species'
+
 
 
 class TestTICUClust:
@@ -930,6 +948,7 @@ class TestTICAnalysis:
             lines = f.readlines()
         assert len(lines) > 0
         result_path.unlink()
+
 
 
 if __name__ == '__main__':
