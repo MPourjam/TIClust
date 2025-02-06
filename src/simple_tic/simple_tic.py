@@ -1022,14 +1022,18 @@ class TICUClust:
     """
     Objects of this class will take zOTUs and cluster them using UClust.
     """
-    usearch_bin = pl.Path('../bin/usearch11.0.667_i86linux64a').absolute()
-
+    usearch_bin = pl.Path(__file__).parent.parent.parent.joinpath('bin/usearch11.0.667_i86linux64')
+    uclust_work_dir = pl.Path(__file__).parent.parent.parent.joinpath('Uclust-WD')
     def __init__(
             self,
-            usearch_bin: pl.Path = pl.Path('../bin/usearch11.0.667_i86linux64'),
-            uclust_work_pd: pl.Path = pl.Path('../Uclust-WD').absolute()
+            uclust_work_pd: pl.Path,
+            usearch_bin: pl.Path = None
             ):
-        self.usearch_bin = pl.Path(pl.PurePath(usearch_bin)).absolute().resolve()
+        if not usearch_bin:
+            self.usearch_bin = pl.Path(self.usearch_bin).absolute().resolve()
+        else:
+            self.usearch_bin = pl.Path(pl.PurePath(usearch_bin)).absolute().resolve()
+
         if not self.usearch_bin.exists() or not self.usearch_bin.is_file():
             raise FileNotFoundError(f"Usearch binary not found at {self.usearch_bin}")
         if uclust_work_pd.is_file():
