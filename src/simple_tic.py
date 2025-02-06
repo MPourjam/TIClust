@@ -95,6 +95,8 @@ class Taxonomy:
     def full_tax(self, full_tax: str, delimiter: str = None):
         # new full-level tax should not have any invalid taxonomies
         self.delimiter = delimiter if delimiter else self.delimiter
+        full_tax_ = self.get_clean_taxonomy(full_tax, self.delimiter, force_full_path=True)
+        tax_str_ = self.get_clean_taxonomy(full_tax, self.delimiter, force_full_path=False)
         self.__full_tax = self.get_clean_taxonomy(full_tax, self.delimiter, force_full_path=True)
         self.__tax_str = self.get_clean_taxonomy(full_tax, self.delimiter, force_full_path=False)
 
@@ -137,7 +139,7 @@ class Taxonomy:
             cls,
             tax_str: str,
             delimiter: str = None,
-            force_full_path: bool = True) -> str:
+            force_full_path: bool = False) -> str:
         # TODO needs testing
         delimiter = delimiter if delimiter else cls.delimiter
         clean_tax = []
@@ -326,9 +328,12 @@ class SeqHeader:
     def __init__(self, header: str):
         self.seq_id = SeqID(header)
         self.taxonomy = Taxonomy(header)
+
+    @property
+    def header(self) -> str:
         seq_header = '>' + str(self.seq_id)
         seq_header += ' ' + str(self.taxonomy) if self.taxonomy else ''
-        self.header = seq_header
+        return seq_header
 
     def __repr__(self):
         return self.header
@@ -441,6 +446,10 @@ class SequenceCluster:
             # if centroid is None then we do not end up here as None is element of all lists
             raise ValueError("The centroid should be one of the sequences in the group.")
         self.__centroid = centroid
+    
+    @property
+    def taxas(self) -> List[Taxonomy]:
+        return [seq.header.taxonomy for seq in self.sequences]
 
     @property
     def closest_common_ancestor(self) -> Taxonomy:
@@ -504,7 +513,7 @@ class SequenceCluster:
         return len(self.sequences)
 
     def __str__(self):
-        return f"{self.__class__.__name__}({self.tax}, ({len(self.sequences)})"
+        return f"<{self.__class__.__name__}>{self.tax}|size={len(self.sequences)}"
 
     def __repr__(self):
         return self.__str__()
@@ -527,7 +536,7 @@ class SequenceCluster:
 
     def set_level(self, level: str, value: str):
         # NOTE taxonomy.set_level is not logically consistent with the rest of the code
-        if len(self.sequences):
+        if len(self.sequences) == 0:
             print("No sequences in the group.")
         for seq in self.sequences:
             seq.header.taxonomy.set_level(level, value)
@@ -547,9 +556,7 @@ class SequenceCluster:
         return len(self.sequences)
 
     def __iter__(self):
-        # iter over centroid and sequences
-        if self.centroid and isinstance(self.centroid, Sequence):
-            yield self.centroid
+        # iter over sequences. First sequence is the centroid.
         yield from self.sequences
 
     def __bool__(self):
@@ -594,11 +601,6 @@ class GenusCluster(SequenceCluster):
             homogeneity_level='genus'
         )
 
-    def __repr__(self):
-        return f"{self.__class__.__name__}({self.tax}, ({len(self.sequences)})"
-
-    def __str__(self):
-        return self.__repr__()
 
 
 class FamilyCluster(SequenceCluster):
@@ -615,12 +617,6 @@ class FamilyCluster(SequenceCluster):
             homogeneity_level='family'
         )
 
-    def __repr__(self):
-        return f"{self.__class__.__name__}({self.tax}, ({len(self.sequences)})"
-
-    def __str__(self):
-        return self.__repr__()
-
 
 class OrderCluster(SequenceCluster):
 
@@ -635,12 +631,6 @@ class OrderCluster(SequenceCluster):
             force_homogeneity=True,
             homogeneity_level='order'
         )
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}({self.tax}, ({len(self.sequences)})"
-
-    def __str__(self):
-        return self.__repr__()
 
 
 class ClassCluster(SequenceCluster):
@@ -657,12 +647,6 @@ class ClassCluster(SequenceCluster):
             homogeneity_level='class'
         )
 
-    def __repr__(self):
-        return f"{self.__class__.__name__}({self.tax}, ({len(self.sequences)})"
-
-    def __str__(self):
-        return self.__repr__()
-
 
 class PhylumCluster(SequenceCluster):
 
@@ -678,12 +662,6 @@ class PhylumCluster(SequenceCluster):
             homogeneity_level='phylum'
         )
 
-    def __repr__(self):
-        return f"{self.__class__.__name__}({self.tax}, ({len(self.sequences)})"
-
-    def __str__(self):
-        return self.__repr__()
-
 
 class KingdomCluster(SequenceCluster):
 
@@ -698,12 +676,6 @@ class KingdomCluster(SequenceCluster):
             force_homogeneity=True,
             homogeneity_level='kingdom'
         )
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}({self.tax}, ({len(self.sequences)})"
-
-    def __str__(self):
-        return self.__repr__()
 
 
 class FastaFile:
@@ -1195,7 +1167,7 @@ class TICAnalysis:
         # based on their taxonomy and NOTE: it should be immutable
         # self.target_lieages = list(set(list(self.fasta_file.tax_obj_list)))
         # self.tax_tree = TaxononomyTree(self.fasta_file.tax_obj_list)
-        self.cluster_thresholds = self.default_thresholds
+        self.cluster_thresholds = self.default_thresholds.copy()
         self.output_fasta = self.__get_fasta_file("output")
 
     def filter_tax_set_at_last_known_level(self, level: str) -> List[Taxonomy]:
@@ -1214,7 +1186,7 @@ class TICAnalysis:
         self.threads = threads
         if cluster_thresholds:
             self.cluster_thresholds = cluster_thresholds
-        all_known_order_fasta_path = self.fill_up_to_order()
+        all_known_order_fasta_path = self.fill_upto_order()
         all_known_family_fasta_path = self.complete_family_level(all_known_order_fasta_path)
         all_known_genus_fasta_path = self.complete_genus_level(all_known_family_fasta_path)
         all_known_species_fasta_path = self.complete_species_level(all_known_genus_fasta_path)
@@ -1242,45 +1214,63 @@ class TICAnalysis:
         )
         return sub_clusters_list
 
-    def __get_fasta_file(self, file_name: str) -> TaxedFastaFile:
+    def __get_fasta_file(self, file_stem_name: str) -> TaxedFastaFile:
         input_fasta_parent_path = self.fasta_file.fasta_file_path.parent
-        all_known_order_fasta_path = input_fasta_parent_path / f"{str(file_name)}.fasta"
+        # Add some random parts to file_stem_name so that it does not overwrite other file
+        file_stem_name = next(tempfile._get_candidate_names()) + "_" + file_stem_name
+        target_fasta_file_path = input_fasta_parent_path / f"{str(file_stem_name)}.fasta"
         # deleting the file if it exists
-        if all_known_order_fasta_path.exists():
-            all_known_order_fasta_path.unlink()
-        all_known_order_fasta_path.touch()
-        all_known_order_fasta = TaxedFastaFile(all_known_order_fasta_path)
-        return all_known_order_fasta
+        if target_fasta_file_path.exists():
+            target_fasta_file_path.unlink()
+        target_fasta_file_path.touch()
+        target_fasta_file_obj = TaxedFastaFile(target_fasta_file_path)
+        return target_fasta_file_obj
 
-    def fill_up_to_order(self):
+    def fill_upto_order(self):
         all_known_order_fasta = self.__get_fasta_file("all_known_order")
         last_known_kingdoms = self.filter_tax_set_at_last_known_level('kingdom')
         clusters_to_fill = []
         for knwon_king_tax in last_known_kingdoms:
+            seq_known_upto_kingdom = self.fasta_file.filter_seq_by_tax(knwon_king_tax)
             seq_cluster = KingdomCluster(
-                self.fasta_file.filter_seq_by_tax(knwon_king_tax)
+                seq_known_upto_kingdom
             )
+            kingdom_ = seq_cluster.centroid.header.taxonomy.kingdom
+            na_phy = 'NA_phylum__' + kingdom_
+            na_cla = 'NA_class__' + kingdom_
+            na_ord = 'NA_order__' + kingdom_
+            seq_cluster.set_level('phylum', na_phy)
+            seq_cluster.set_level('class', na_cla)
+            seq_cluster.set_level('order', na_ord)
             clusters_to_fill.append(seq_cluster)
 
         last_known_phylums = self.filter_tax_set_at_last_known_level('phylum')
         for known_phyl_tax in last_known_phylums:
+            seq_known_upto_phylum = self.fasta_file.filter_seq_by_tax(known_phyl_tax)
             seq_cluster = PhylumCluster(
-                self.fasta_file.filter_seq_by_tax(known_phyl_tax)
+                seq_known_upto_phylum
             )
+            phylum_ = seq_cluster.centroid.header.taxonomy.phylum
+            na_cla = 'NA_class__' + phylum_
+            na_ord = 'NA_order__' + phylum_
+            seq_cluster.set_level('class', na_cla)
+            seq_cluster.set_level('order', na_ord)
             clusters_to_fill.append(seq_cluster)
 
         last_known_classes = self.filter_tax_set_at_last_known_level('class')
         for known_class_tax in last_known_classes:
+            seq_known_upto_class = self.fasta_file.filter_seq_by_tax(known_class_tax)
             seq_cluster = ClassCluster(
-                self.fasta_file.filter_seq_by_tax(known_class_tax)
+                seq_known_upto_class
             )
+            class_ = seq_cluster.centroid.header.taxonomy.class_
+            na_ord = 'NA_order__' + class_
+            seq_cluster.set_level('order', na_ord)
             clusters_to_fill.append(seq_cluster)
 
         for this_cluster in clusters_to_fill:
-            this_cluster.set_level('family', '')
-            this_cluster.set_level('genus', '')
-            this_cluster.set_level('species', '')
-            all_known_order_fasta.write_to_fasta_file(sequences=list(this_cluster), mode='a')
+            seq_list_to_write = list(this_cluster)
+            all_known_order_fasta.write_to_fasta_file(sequences=seq_list_to_write, mode='a')
 
         return all_known_order_fasta.fasta_file_path
 
