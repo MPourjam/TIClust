@@ -4,6 +4,7 @@
 import re
 import tempfile
 import math
+import shutil
 import pathlib as pl
 from collections import defaultdict, OrderedDict
 from typing import List, Dict, Set, Tuple, Optional, Union
@@ -1143,6 +1144,8 @@ class TICUClust:
             last_knwon_tax_level = centroid.header.taxonomy.last_known_level
             cluster = SequenceCluster(seq_objs, centroid, last_knwon_tax_level)
             clusters.append(cluster)
+        # deleting the intermediate files
+        shutil.rmtree(input_fasta_path.parent)
         return clusters
 
     def sort_seqs(self, to_sort_fasta: str, by: str = 'size') -> str:
@@ -1188,6 +1191,7 @@ class TICAnalysis:
 
     def __init__(self, taxed_fasta_file_path: pl.Path):
         self.fasta_file = TaxedFastaFile(taxed_fasta_file_path)
+        self.uclust_wd = self.fasta_file.fasta_file_path.parent / "Uclust-WD"
         self.cluster_thresholds = self.default_thresholds.copy()
 
     def filter_tax_set_at_last_known_level(self, level: str) -> List[Taxonomy]:
@@ -1216,6 +1220,7 @@ class TICAnalysis:
         all_known_family_fasta_path.unlink()
         all_known_genus_fasta_path.unlink()
 
+        shutil.rmtree(self.uclust_wd)
         return self.output_fasta.fasta_file_path
 
     def grow_taxonomy(
@@ -1227,11 +1232,9 @@ class TICAnalysis:
         input_fasta = TaxedFastaFile(pl.Path(input_fasta).absolute().resolve())
         with open(input_fasta.fasta_file_path, 'r') as fasta:
             print(fasta.readline())
-        uclust_wd = input_fasta.fasta_file_path.parent / "Uclust-WD"
-        uclust_obj = TICUClust(uclust_work_pd=uclust_wd)
+        uclust_obj = TICUClust(uclust_work_pd=self.uclust_wd)
         homo_level = tax_to_complete.last_known_level
         tax_seqs = input_fasta.filter_seq_by_tax(tax_to_complete)
-        print(f"tax seqs: {tax_seqs}")
         sequence_cluster = SequenceCluster(
             tax_seqs,
             homogeneity_level=homo_level
@@ -1314,7 +1317,6 @@ class TICAnalysis:
             (tax, all_known_order_fasta.fasta_file_path, self.cluster_thresholds['family'])
             for tax in last_known_order_taxs
         ]
-        # print(f"\n\nArgs list: {args_list}")
         with ThreadPoolExecutor(max_workers=self.threads) as executor:
             result_clusters = list(
                 executor.map(
@@ -1404,3 +1406,10 @@ class TICAnalysis:
         num_1_str = str(num_1)
         num_2_str = str(num_2)
         return f"{num_1_str}{num_2_str}"
+
+    def __del__(self):
+        shutil.rmtree(self.uclust_wd, ignore_errors=True)
+
+    # when the object is deleted, the temporary directory should be deleted
+    def __exit__(self, exc_type, exc_value, traceback):
+        shutil.rmtree(self.uclust_wd, ignore_errors=True)
