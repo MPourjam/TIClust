@@ -140,7 +140,6 @@ class Taxonomy:
             tax_str: str,
             delimiter: str = None,
             force_full_path: bool = False) -> str:
-        # TODO needs testing
         delimiter = delimiter if delimiter else cls.delimiter
         clean_tax = []
         clean_full_path = cls.hypo_full_tax_list.copy()
