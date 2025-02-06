@@ -889,7 +889,8 @@ class TestTICUClust:
             sorted_fasta_file.unlink()
 
 
-class TestTICAnalysis:
+@pytest.mark.simple_test
+class TestTICAnalysisSimple:
 
     def setup_method(self):
         self.fasta_file_path = pl.Path("small-test_tic_analysis.fasta")
@@ -898,33 +899,24 @@ class TestTICAnalysis:
     def teardown_method(self):
         # self.fasta_file_path.unlink()
         pass
-
-    def test_filter_tax_set_at_last_known_level(self):
-        taxonomies = self.tic_analysis.filter_tax_set_at_last_known_level('species')
+    
+    @pytest.mark.parametrize("level", ["phylum", "class", "order", "family", "genus", "species"])
+    def test_filter_tax_set_at_last_known_level(self, level):
+        taxonomies = self.tic_analysis.filter_tax_set_at_last_known_level(level)
         assert isinstance(taxonomies, list)
         assert len(taxonomies) == 1  # All taxa are at the species level
         for tax in taxonomies:
             assert isinstance(tax, stic.Taxonomy)
-            assert tax.last_known_level == 'species'
+            assert tax.last_known_level == level
 
     def test_fill_upto_order(self):
-        self.tic_analysis.fill_upto_order()
-        with open(self.tic_analysis.output_fasta.fasta_file_path, 'r') as f:
+        all_knwon_order_fasta_path = self.tic_analysis.fill_upto_order()
+        with open(all_knwon_order_fasta_path, 'r') as f:
             lines = f.readlines()
         # only 3 sequences have incomplete taxonomy upto the order level
-        assert len(lines) == 14
-
-    # def test_grow_taxonomy(self):
-    #     tax_str = "tax=kingdom;phylum;class;order;family;genus;species;"
-    #     taxonomy = stic.Taxonomy(tax_str)
-    #     clusters = self.tic_analysis.grow_taxonomy(
-    #         taxonomy,
-    #         cluster_threshold=0.987,
-    #         usearch_bin=pl.Path('../bin/usearch11.0.667_i86linux64').absolute()
-    #     )
-    #     assert isinstance(clusters, list)
-    #     for cluster in clusters:
-    #         assert isinstance(cluster, stic.SequenceCluster)
+        assert len(lines) == 8
+        # Clean up
+        all_knwon_order_fasta_path.unlink()
 
     def test_complete_family_level(self):
         all_knwon_order_file_path = self.tic_analysis.fill_upto_order()
