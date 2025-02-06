@@ -3,7 +3,7 @@ import sys
 import os
 import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
-import simple_tic as stic
+from simple_tic import simple_tic as stic
 import tic_helper as tich
 import logging
 import tempfile
