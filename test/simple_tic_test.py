@@ -119,8 +119,8 @@ class TestSeqHeader:
     def test_seq_header_initialization(self):
         header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
         seq_header = stic.SeqHeader(header)
-        assert str(seq_header.seq_id) == ">seq1"
-        assert isinstance(seq_header.taxonomy, Taxonomy)
+        assert str(seq_header.seq_id) == "seq1"
+        assert isinstance(seq_header.taxonomy, stic.Taxonomy)
         assert seq_header.taxonomy.tax_str == "kingdom;phylum;class;order;family;genus;species"
         assert str(seq_header.taxonomy) == "tax=kingdom;phylum;class;order;family;genus;species"
 
@@ -130,7 +130,7 @@ class TestSequence:
     def test_sequence_initialization(self):
         header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
         sequence = "ATCGATCGATCG"
-        seq = stic.stic.Sequence(header, sequence)
+        seq = stic.Sequence(header, sequence)
         assert str(seq.header.seq_id) == "seq1"
         assert seq.sequence == "ATCGATCGATCG"
 
@@ -832,7 +832,7 @@ class TestTICUClust:
             assert len(centroid_seq_dict) == 4
             # first element in the centroid_seq_dict should be self.seq4 as it
             # is the longest sequence
-            assert list(centroid_seq_dict.keys())[0] == str(self.seq4.header)[1:]
+            assert list(centroid_seq_dict.keys())[0] == str(self.seq4.header)
 
     def test_parse_uc_file(self):
         uc_content = """\
@@ -850,27 +850,35 @@ class TestTICUClust:
             uc_file_path = uc_file.name
         uc_dict = self.ticuclust.parse_uc_file(uc_file_path)
         assert isinstance(uc_dict, dict)
-        print(f"uc_file_path: {uc_file_path}")
         assert len(uc_dict) == 4 # 4 sequences and each is one cluster
-        assert list(uc_dict.values())[0][0] == "seq4 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species"
+        assert list(uc_dict.values())[0][0] == ">seq4 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species"
+        uc_dict = self.ticuclust.parse_uc_file(uc_file_path, cut_tax=True)
+        assert isinstance(uc_dict, dict)
+        assert len(uc_dict) == 4
+        assert list(uc_dict.values())[0][0] == ">seq4"
         pl.Path(uc_file_path).unlink()
 
     # TODO: check the rest of the methods
     def test_get_sequences_clusters(self):
         clusters = self.ticuclust.get_sequences_clusters(self.sequences, 0.987)
         assert isinstance(clusters, list)
-        assert len(clusters) > 0
-        assert isinstance(clusters[0], SequenceCluster)
+        assert len(clusters) == 4 # 4 sequences, each in its own cluster
+        assert isinstance(clusters[0], stic.SequenceCluster)
 
     def test_sort_seqs(self):
         with tempfile.TemporaryDirectory(dir=self.uclust_work_dir) as temp_cluster_dir:
             run_dir = pl.Path(temp_cluster_dir)
             input_fasta_path = run_dir.joinpath("input.fasta").absolute()
-            sequence_cluster = SequenceCluster(self.sequences, force_homogeneity=False)
+            sequence_cluster = stic.SequenceCluster(self.sequences, force_homogeneity=False)
             sequence_cluster.write_to_fasta(input_fasta_path)
             sorted_fasta_file = self.ticuclust.sort_seqs(str(input_fasta_path), by="length")
             assert sorted_fasta_file.exists()
             assert sorted_fasta_file.stat().st_size > 0
+            # first sequence in the sorted file should be self.seq4 as it is the longest sequence
+            with open(sorted_fasta_file, 'r') as f:
+                lines = f.readlines()
+                assert lines[0].strip() == str(self.seq4.header)
+            sorted_fasta_file.unlink()
 
 
 class TestTICAnalysis:

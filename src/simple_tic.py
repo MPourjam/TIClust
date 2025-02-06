@@ -326,7 +326,9 @@ class SeqHeader:
     def __init__(self, header: str):
         self.seq_id = SeqID(header)
         self.taxonomy = Taxonomy(header)
-        self.header = '>' + str(self.seq_id) + ' ' + str(self.taxonomy)
+        seq_header = '>' + str(self.seq_id)
+        seq_header += ' ' + str(self.taxonomy) if self.taxonomy else ''
+        self.header = seq_header
 
     def __repr__(self):
         return self.header
@@ -828,6 +830,10 @@ class FastaFile:
                 else:
                     seq_str += curr_line
                 curr_line = fasta_fio.readline().strip()
+            if seq_str:
+                seq_obj = Sequence(seq_header, seq_str)
+                if str(seq_obj.header.seq_id) in seq_ids_list:
+                    output_list.append(seq_obj)
 
         return output_list
 
@@ -1033,7 +1039,8 @@ class TICUClust:
     def run_uclust(
             self,
             sequences: List[Sequence],
-            cluster_id: float = 0.987) -> Tuple[pl.Path, dict]:
+            cluster_id: float = 0.987,
+            cut_tax: bool = False) -> Tuple[pl.Path, dict]:
         """
         It runs uclust_smallmem on the input fasta file and
         returns the uc file path and the centroids fasta file path
@@ -1067,7 +1074,7 @@ class TICUClust:
         ]
         system_sub(cmd_to_call, force_log=True)
         onelinefasta(centroids_file)
-        centroid_cluster_dict = self.parse_uc_file(str(uc_file))
+        centroid_cluster_dict = self.parse_uc_file(str(uc_file), cut_tax=cut_tax)
         return input_fasta_path, centroid_cluster_dict
 
     @staticmethod
@@ -1099,6 +1106,9 @@ class TICUClust:
                     if cut_tax:
                         query = tax_reg.sub("", query).strip()
                         target_centroid = tax_reg.sub("", target_centroid).strip()
+                    # prepending '>' to the centroid and query. As uclust removes the '>' from the query
+                    target_centroid = '>' + target_centroid
+                    query = '>' + query
                     cluster_members = uc_dict.get(target_centroid, [])
                     cluster_members.append(query)
                     uc_dict[target_centroid] = cluster_members
@@ -1108,6 +1118,8 @@ class TICUClust:
                     # omitting the taxonomic information
                     if cut_tax:
                         centroid = tax_reg.sub("", centroid).strip()
+                    # prepending '>' to the centroid
+                    centroid = '>' + centroid
                     cluster_members = uc_dict.get(centroid, [])
                     # the centroid is always the first element in the list
                     cluster_members.insert(0, centroid)
@@ -1121,13 +1133,18 @@ class TICUClust:
             sequences: List[Sequence],
             cluster_id: float) -> List[SequenceCluster]:
         clusters = []
-        input_fasta_path, cent_clust_dict = self.run_uclust(sequences, cluster_id)
+        input_fasta_path, cent_clust_dict = self.run_uclust(sequences, cluster_id, cut_tax=True)
         input_fasta = TaxedFastaFile(input_fasta_path)
         for cent_id, seqs_id in cent_clust_dict.items():
-            centroid = input_fasta.get_seq_by_seq_id([cent_id])[0]
+            # First element in the seqs_id is the centroid
+            seqs_to_get = [str(SeqHeader(cent_id).seq_id) for seq_id in seqs_id]
+            seq_objs = input_fasta.get_seq_by_seq_id(seqs_to_get)
+            if not seq_objs:
+                raise ValueError(f"No sequence found for {seqs_to_get}")
+            # pop the centroid
+            centroid = seq_objs[0]
             last_knwon_tax_level = centroid.header.taxonomy.last_known_level
-            seqs = input_fasta.get_seq_by_seq_id(seqs_id)
-            cluster = SequenceCluster(seqs, centroid, last_knwon_tax_level)
+            cluster = SequenceCluster(seq_objs, centroid, last_knwon_tax_level)
             clusters.append(cluster)
         return clusters
 
