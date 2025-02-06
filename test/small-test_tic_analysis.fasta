@@ -1,0 +1,15 @@
+>seq1 tax=Bacteria;
+ATCGATCGATCG
+>seq2 tax=Bacteria;phylum;
+GCTAGCTAGCTA
+>seq3 tax=Bacteria;phylum;class;
+CGTACGTACGTA
+>seq4 tax=Bacteria;phylum;class;order;
+TACGTGGVACGTACG
+>seq5 tax=Bacteria;phylum;class;order;family;
+TACGTAAACGTACG
+>seq6 tax=Bacteria;phylum;class;order;family;genus;
+TACGTACCCGTACG
+>seq7 tax=Bacteria;phylum;class;order;family;genus;species;
+TACGTACGTTTTACG
+        
