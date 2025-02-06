@@ -893,11 +893,10 @@ class TestTICUClust:
 class TestTICAnalysisSimple:
 
     def setup_method(self):
-        self.fasta_file_path = pl.Path("small-test_tic_analysis.fasta")
+        self.fasta_file_path = pl.Path(__file__).parent.joinpath("small-test_tic_analysis.fasta").resolve()
         self.tic_analysis = stic.TICAnalysis(self.fasta_file_path)
 
     def teardown_method(self):
-        # self.fasta_file_path.unlink()
         pass
     
     @pytest.mark.parametrize("level", ["phylum", "class", "order", "family", "genus", "species"])
@@ -976,6 +975,46 @@ class TestTICAnalysisSimple:
         for taxa in output_fasta.tax_obj_list:
             assert taxa.last_known_level == "species"
 
+
+@pytest.mark.medium_test
+class TestTICAnalysis:
+
+    def setup_method(self):
+        self.fasta_file_path = pl.Path(__file__).parent.joinpath("input_sequences_first1000.fasta").resolve()
+        self.tic_analysis = stic.TICAnalysis(self.fasta_file_path)
+
+    def teardown_method(self):
+        pass
+
+    @pytest.mark.parametrize("level", ["phylum", "class", "order", "family", "genus", "species"])
+    def test_filter_tax_set_at_last_known_level(self, level):
+        taxonomies = self.tic_analysis.filter_tax_set_at_last_known_level(level)
+        assert isinstance(taxonomies, list)
+        if level == "order":
+            print(taxonomies)
+            assert len(taxonomies) == 1  # All taxa are at the species level
+        for tax in taxonomies:
+            assert isinstance(tax, stic.Taxonomy)
+            assert tax.last_known_level == level
+    
+    def test_fill_upto_order(self):
+        all_knwon_order_fasta_path = self.tic_analysis.fill_upto_order()
+        with open(all_knwon_order_fasta_path, 'r') as f:
+            lines = f.readlines()
+        assert len(lines) == 1000
+        # Clean up
+        all_knwon_order_fasta_path.unlink()
+
+    def test_complete_family_level(self):
+        all_knwon_order_file_path = self.tic_analysis.fill_upto_order()
+        all_knwon_family_file_path = self.tic_analysis.complete_family_level(all_knwon_order_file_path)
+        with open(all_knwon_family_file_path, 'r') as f:
+            lines = f.readlines()
+        assert len(lines) == 1000
+        # TODO 33 families should get created
+        # Clean up
+        all_knwon_order_file_path.unlink()
+        all_knwon_family_file_path.unlink()
 
 if __name__ == '__main__':
     pytest.main()

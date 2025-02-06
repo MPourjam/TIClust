@@ -1138,7 +1138,7 @@ class TICUClust:
         input_fasta = TaxedFastaFile(input_fasta_path)
         for cent_id, seqs_id in cent_clust_dict.items():
             # First element in the seqs_id is the centroid
-            seqs_to_get = [str(SeqHeader(cent_id).seq_id) for seq_id in seqs_id]
+            seqs_to_get = [str(SeqHeader(seq_id).seq_id) for seq_id in seqs_id]
             seq_objs = input_fasta.get_seq_by_seq_id(seqs_to_get)
             if not seq_objs:
                 raise ValueError(f"No sequence found for {seqs_to_get}")
@@ -1148,7 +1148,7 @@ class TICUClust:
             cluster = SequenceCluster(seq_objs, centroid, last_knwon_tax_level)
             clusters.append(cluster)
         # deleting the intermediate files
-        # shutil.rmtree(input_fasta_path.parent)
+        shutil.rmtree(input_fasta_path.parent)
         return clusters
 
     def sort_seqs(self, to_sort_fasta: str, by: str = 'size') -> str:
@@ -1225,7 +1225,7 @@ class TICAnalysis:
         # log the output fasta file path
         logging.info(f"Output fasta file is at {self.output_fasta.fasta_file_path}")
 
-        # shutil.rmtree(self.uclust_wd)
+        shutil.rmtree(self.uclust_wd)
         return self.output_fasta.fasta_file_path
 
     def grow_taxonomy(
@@ -1337,7 +1337,8 @@ class TICAnalysis:
             for inner_ind, cluster in enumerate(clusters_list):
                 inner_ind += 1
                 cluster.set_level('family', 'FOTU' + self.concat_nums(ind, inner_ind))
-            all_known_family_fasta.write_to_fasta_file(sequences=list(cluster), mode='a')
+                all_known_family_fasta.write_to_fasta_file(sequences=list(cluster), mode='a')
+        logging.info(f"Completed family level for {len(result_clusters)} orders.")
 
         # append all sequences known upto family level to output fasta
         self.fasta_file.write_seqs_last_known_at('family', all_known_family_fasta.fasta_file_path, 'a')
@@ -1368,7 +1369,7 @@ class TICAnalysis:
             for inner_ind, cluster in enumerate(clusters_list):
                 inner_ind += 1
                 cluster.set_level('genus', 'GOTU' + self.concat_nums(ind, inner_ind))
-            all_known_genus_fasta.write_to_fasta_file(sequences=list(cluster), mode='a')
+                all_known_genus_fasta.write_to_fasta_file(sequences=list(cluster), mode='a')
         # append all sequences known upto genus level to output fasta
         self.fasta_file.write_seqs_last_known_at('genus', all_known_genus_fasta.fasta_file_path, 'a')
         return all_known_genus_fasta.fasta_file_path
@@ -1397,7 +1398,7 @@ class TICAnalysis:
             for inner_ind, cluster in enumerate(clusters_list):
                 inner_ind += 1
                 cluster.set_level('species', 'SOTU' + self.concat_nums(ind, inner_ind))
-            all_known_species_fasta.write_to_fasta_file(sequences=list(cluster), mode='a')
+                all_known_species_fasta.write_to_fasta_file(sequences=list(cluster), mode='a')
         # append all sequences known upto species level to output fasta
         self.fasta_file.write_seqs_last_known_at('species', all_known_species_fasta.fasta_file_path, 'a')
         return all_known_species_fasta.fasta_file_path
