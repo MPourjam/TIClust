@@ -1228,24 +1228,23 @@ class TICAnalysis:
         self.tic_wd = self.fasta_file.fasta_file_path.parent / "TIC-WD"
         if self.tic_wd.exists():
             logging.warning(
-                "TIC work directory already exists. Running TIC will overwrite it."
+                "TIC work directory already exists. Running TIC overwrites it."
             )
-        else:
-            self.tic_wd.mkdir(parents=True, exist_ok=True)
+            shutil.rmtree(self.tic_wd)
         self.uclust_wd = self.tic_wd / "Uclust-WD"
-        if self.uclust_wd.exists():
-            logging.warning(
-                "Uclust work directory already exists. Running TIC will overwrite it."
-            )
-        else:
-            self.uclust_wd.mkdir(parents=True, exist_ok=True)
+        # creating the directories
+        self.tic_wd.mkdir(parents=True, exist_ok=True)
+        self.uclust_wd.mkdir(parents=True, exist_ok=True)
+        # creating the file paths
         self.fotu_gotu_file_path = self.tic_wd / "Map-FOTU-GOTU.tab"
         self.gotu_sotu_file_path = self.tic_wd / "Map-GOTU-SOTU.tab"
         self.sotu_zotu_file_path = self.tic_wd / "Map-SOTU-ZOTU.tab"
         self.tic_output_fasta_path = self.tic_wd / "TIC-FullTaxonomy.fasta"
+        # creating the lists
         self.fotu_gotu_list: List[Tuple[str, str]] = []
         self.gotu_sotu_list: List[Tuple[str, str]] = []
         self.sotu_zotu_list: List[Tuple[str, str]] = []
+        # setting the default thresholds
         self.cluster_thresholds = self.default_thresholds.copy()
 
     def filter_tax_set_at_last_known_level(self, level: str) -> List[Taxonomy]:
@@ -1261,13 +1260,6 @@ class TICAnalysis:
             threads: int = int(cpu_count() * 0.75),
             cluster_thresholds: Dict[str, float] = None
             ) -> None:
-        if self.tic_wd.exists():
-            logging.warning("TIC work directory already exists. Deleting it.")
-            shutil.rmtree(self.tic_wd)
-        self.uclust_wd = self.tic_wd / "Uclust-WD"
-        if self.uclust_wd.exists():
-            logging.warning("Uclust work directory already exists. Deleting it.")
-            shutil.rmtree(self.uclust_wd)
         self.threads = threads
         if cluster_thresholds:
             self.cluster_thresholds = cluster_thresholds
