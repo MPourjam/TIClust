@@ -1230,11 +1230,15 @@ class TICAnalysis:
             logging.warning(
                 "TIC work directory already exists. Running TIC will overwrite it."
             )
+        else:
+            self.tic_wd.mkdir(parents=True, exist_ok=True)
         self.uclust_wd = self.tic_wd / "Uclust-WD"
         if self.uclust_wd.exists():
             logging.warning(
                 "Uclust work directory already exists. Running TIC will overwrite it."
             )
+        else:
+            self.uclust_wd.mkdir(parents=True, exist_ok=True)
         self.fotu_gotu_file_path = self.tic_wd / "Map-FOTU-GOTU.tab"
         self.gotu_sotu_file_path = self.tic_wd / "Map-GOTU-SOTU.tab"
         self.sotu_zotu_file_path = self.tic_wd / "Map-SOTU-ZOTU.tab"
