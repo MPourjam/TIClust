@@ -1102,7 +1102,7 @@ class TICUClust:
             "-strand",
             "both",
         ]
-        system_sub(cmd_to_call, force_log=True)
+        system_sub(cmd_to_call, force_log=False, quiet=True)
         onelinefasta(centroids_file)
         centroid_cluster_dict = self.parse_uc_file(str(uc_file), cut_tax=cut_tax)
         return input_fasta_path, centroid_cluster_dict
@@ -1193,7 +1193,7 @@ class TICUClust:
                 "-fastaout",
                 str(sorted_fasta_file),
             ]
-            system_sub(cmd_to_call_list, force_log=True)
+            system_sub(cmd_to_call_list, force_log=False, quiet=True)
         elif by == 'length':
             cmd_to_call_list = [
                 str(self.usearch_bin),
@@ -1202,7 +1202,7 @@ class TICUClust:
                 "-fastaout",
                 str(sorted_fasta_file),
             ]
-            system_sub(cmd_to_call_list, force_log=True)
+            system_sub(cmd_to_call_list, force_log=False, quiet=True)
         else:
             raise ValueError("Sorting should be by either 'size' or 'length'")
         onelinefasta(sorted_fasta_file)
