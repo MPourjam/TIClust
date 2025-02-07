@@ -28,6 +28,86 @@ class TestTaxonomy:
         assert taxonomy.family == "family"
         assert taxonomy.genus == "genus"
         assert taxonomy.species == "species"
+    
+    def test_taxonomy_init_unclassifed(self):
+        tax_str = "tax=Unclassified"
+        taxonomy = stic.Taxonomy(tax_str)
+        assert taxonomy.tax_str == ""
+        assert taxonomy.kingdom == "NA-Kingdom"
+        assert taxonomy.phylum == "NA-Phylum"
+        assert taxonomy.class_ == "NA-Class"
+        assert taxonomy.order == "NA-Order"
+        assert taxonomy.family == "NA-Family"
+        assert taxonomy.genus == "NA-Genus"
+        assert taxonomy.species == "NA-Species"
+        assert taxonomy.full_tax == "NA-Kingdom;NA-Phylum;NA-Class;NA-Order;NA-Family;NA-Genus;NA-Species"
+        assert taxonomy.last_known_level == ""
+        assert taxonomy.orig_tax == "Unclassified"
+        assert str(taxonomy) == "tax=NA-Kingdom;NA-Phylum;NA-Class;NA-Order;NA-Family;NA-Genus;NA-Species"
+        assert taxonomy.get_level("kingdom") == "NA-Kingdom"
+
+    def test_taxonomy_all_invalid(self):
+        tax_str = "tax=;;;;;;"
+        taxonomy = stic.Taxonomy(tax_str)
+        assert taxonomy.tax_str == ""
+        assert taxonomy.kingdom == "NA-Kingdom"
+        assert taxonomy.phylum == "NA-Phylum"
+        assert taxonomy.class_ == "NA-Class"
+        assert taxonomy.order == "NA-Order"
+        assert taxonomy.family == "NA-Family"
+        assert taxonomy.genus == "NA-Genus"
+        assert taxonomy.species == "NA-Species"
+        assert taxonomy.full_tax == "NA-Kingdom;NA-Phylum;NA-Class;NA-Order;NA-Family;NA-Genus;NA-Species"
+        assert taxonomy.last_known_level == ""
+        assert taxonomy.orig_tax == ";;;;;;"
+        assert str(taxonomy) == "tax=NA-Kingdom;NA-Phylum;NA-Class;NA-Order;NA-Family;NA-Genus;NA-Species"
+        assert taxonomy.tax_list == ['']
+        assert taxonomy.full_tax_list == [
+            'NA-Kingdom',
+            'NA-Phylum',
+            'NA-Class',
+            'NA-Order',
+            'NA-Family',
+            'NA-Genus',
+            'NA-Species'
+        ]
+        assert taxonomy == stic.Taxonomy("tax=Unclassified;;;;;")
+        assert bool(taxonomy) == False
+    
+    def test_taxonomy_partial_invalid(self):
+        tax_str = "tax=Bacteria;Proteobacteria;Alphaproteobacteria;SAR11 clade;Clade III"
+        taxonomy = stic.Taxonomy(tax_str)
+        assert taxonomy.tax_str == "Bacteria;Proteobacteria;Alphaproteobacteria;SAR11 clade;Clade III"
+        assert taxonomy.kingdom == "Bacteria"
+        assert taxonomy.phylum == "Proteobacteria"
+        assert taxonomy.class_ == "Alphaproteobacteria"
+        assert taxonomy.order == "SAR11 clade"
+        assert taxonomy.family == "Clade III"
+        assert taxonomy.genus == "NA-Genus"
+        assert taxonomy.species == "NA-Species"
+        assert taxonomy.full_tax == "Bacteria;Proteobacteria;Alphaproteobacteria;SAR11 clade;Clade III;NA-Genus;NA-Species"
+        assert taxonomy.last_known_level == "family"
+        assert taxonomy.orig_tax == "Bacteria;Proteobacteria;Alphaproteobacteria;SAR11 clade;Clade III"
+        assert str(taxonomy) == "tax=Bacteria;Proteobacteria;Alphaproteobacteria;SAR11 clade;Clade III;NA-Genus;NA-Species"
+        assert taxonomy.is_known_upto("family")
+
+
+    def test_taxonomy_eukaryotic(self):
+        tax_str = "tax=Eukaryota;Amorphea;Obazoa;Opisthokonta;"\
+            "Nucletmycea;Fungi;Dikarya;Basidiomycota;Pucciniomycotina;"\
+            "Pucciniomycetes;Pucciniales;Pucciniaceae;Gymnosporangium"
+        taxonomy = stic.Taxonomy(tax_str)
+        assert taxonomy.tax_str == "Eukaryota;Amorphea;Obazoa;Opisthokonta;Nucletmycea;Fungi;Dikarya"
+        assert taxonomy.kingdom == "Eukaryota"
+        assert taxonomy.phylum == "Amorphea"
+        assert taxonomy.class_ == "Obazoa"
+        assert taxonomy.order == "Opisthokonta"
+        assert taxonomy.family == "Nucletmycea"
+        assert taxonomy.genus == "Fungi"
+        assert taxonomy.species == "Dikarya"
+        assert taxonomy.full_tax == "Eukaryota;Amorphea;Obazoa;Opisthokonta;Nucletmycea;Fungi;Dikarya"
+        assert taxonomy.last_known_level == "species"
+        assert taxonomy.get_level("kingdom") == "Eukaryota"
 
     def test_get_tax_upto(self):
         tax_str = "tax=kingdom;phylum;class;order;family;genus;species;"
@@ -110,15 +190,23 @@ class TestTaxonomy:
         assert full_tax == tax_str + "NA-Family;NA-Genus;NA-Species"
 
 
+class TestTaxonomyNonBacteria:
+    """
+    TIC should handle non-bacteria taxonomy (more than 7 levels). 
+    Taxonomies with more than 7 levels are cut to 7 levels.
+    """
+    pass
+
+
 class TestSeqID:
 
     def test_seq_id_initialization(self):
         header = ">seq1 some description"
         seq_id = stic.SeqID(header)
-        assert seq_id.head_id == "seq1"
+        assert seq_id.id_str == "seq1"
         header = ">seq1 ; some; description"
         seq_id = stic.SeqID(header)
-        assert seq_id.head_id == "seq1"
+        assert seq_id.id_str == "seq1"
 
 
 class TestSeqHeader:
@@ -1113,6 +1201,87 @@ class TestTICAnalysis:
         # TODO Implement this test
         pass
 
+@pytest.mark.non_bacteria_test
+class TestTICAnalysisNonBacteria:
+
+    def setup_method(self):
+        self.fasta_file_path = pl.Path(__file__).parent.joinpath("imngs2_job_84_head_tail_1000.fasta").resolve()
+        self.tic_analysis = stic.TICAnalysis(self.fasta_file_path)
+
+    def teardown_method(self):
+        # self.fasta_file_path.unlink()
+        # self.tic_analysis.cleanup(full=True)
+        pass
+
+    def test_fill_upto_order(self):
+        all_knwon_order_fasta_path = self.tic_analysis.fill_upto_order()
+        with open(all_knwon_order_fasta_path, 'r') as f:
+            lines = f.readlines()
+        assert len(lines) == 46
+        # Clean up
+        all_knwon_order_fasta_path.unlink()
+
+    def test_complete_family_level(self):
+        all_knwon_order_file_path = self.tic_analysis.fill_upto_order()
+        all_knwon_family_file_path = self.tic_analysis.complete_family_level(all_knwon_order_file_path)
+        with open(all_knwon_family_file_path, 'r') as f:
+            lines = f.readlines()
+        assert len(lines) == 212
+        # Clean up
+        all_knwon_family_file_path.unlink()
+        all_knwon_order_file_path.unlink()
+
+    def test_complete_genus_level(self):
+        all_known_order_fasta_path = self.tic_analysis.fill_upto_order()
+        all_known_family_fasta_path = self.tic_analysis.complete_family_level(all_known_order_fasta_path)
+        all_known_genus_fasta_path = self.tic_analysis.complete_genus_level(all_known_family_fasta_path)
+        assert all_known_genus_fasta_path.exists()
+        with open(all_known_genus_fasta_path, 'r') as f:
+            lines = f.readlines()
+        assert len(lines) == 261 * 2
+        # Clean up
+        all_known_genus_fasta_path.unlink()
+        all_known_family_fasta_path.unlink()
+        all_known_order_fasta_path.unlink()
+
+    def test_complete_species_level(self):
+        all_known_order_fasta_path = self.tic_analysis.fill_upto_order()
+        all_known_family_fasta_path = self.tic_analysis.complete_family_level(all_known_order_fasta_path)
+        all_known_genus_fasta_path = self.tic_analysis.complete_genus_level(all_known_family_fasta_path)
+        all_known_species_fasta_path = self.tic_analysis.complete_species_level(all_known_genus_fasta_path)
+        assert all_known_species_fasta_path.exists()
+        with open(all_known_species_fasta_path, 'r') as f:
+            lines = f.readlines()
+        assert len(lines) == 1314
+        # Clean up
+        all_known_species_fasta_path.unlink()
+        all_known_genus_fasta_path.unlink()
+        all_known_family_fasta_path.unlink()
+        all_known_order_fasta_path.unlink()
+
+    def test_append_non_bacteria_seqs(self, tmp_path):
+        output_file_path = self.tic_analysis.tic_wd / "NonBacteria.fasta"
+        self.tic_analysis.append_non_bacteria_seqs(output_file_path)
+        with open(output_file_path, 'r') as f:
+            lines = f.readlines()
+        assert len(lines) == 46
+        output_file_path.unlink()
+
+    def test_run(self):
+        self.tic_analysis.run()
+        output_fasta_path = self.tic_analysis.tic_output_fasta_path
+        # with open(output_fasta_path, 'r') as f:
+        #     lines = f.readlines()
+        # # sequence ids of input and output fasta files should be the same
+        # output_fasta = stic.TaxedFastaFile(output_fasta_path)
+        # input_seq_ids = self.tic_analysis.fasta_file.get_seq_ids()
+        # output_seq_ids = output_fasta.get_seq_ids()
+        # for seq_id in input_seq_ids:
+        #     assert seq_id in output_seq_ids
+        # assert len(input_seq_ids) == len(output_seq_ids)
+        # all sequences in the output file should have full taxonomy
+        # for taxa in output_fasta.tax_obj_list:
+        #     assert taxa.last_known_level == "species"
 
 if __name__ == '__main__':
     pytest.main()
