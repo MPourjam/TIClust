@@ -844,15 +844,14 @@ class TestTICUClust:
             assert list(centroid_seq_dict.keys())[0] == str(self.seq4.header)
 
     def test_parse_uc_file(self):
-        uc_content = """\
-            S\t0\t17\t*\t.\t*\t*\t*\tseq4 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*\n\
-            S\t1\t12\t*\t.\t*\t*\t*\tseq3 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*\n\
-            S\t2\t12\t*\t.\t*\t*\t*\tseq2 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\*\n\
-            S\t3\t12\t*\t.\t*\t*\t*\tseq1 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*\n\
-            C\t0\t1\t*\t*\t*\t*\t*\tseq4 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*\n\
-            C\t1\t1\t*\t*\t*\t*\t*\tseq3 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*\n\
-            C\t2\t1\t*\t*\t*\t*\t*\tseq2 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*\n\
-            C\t3\t1\t*\t*\t*\t*\t*\tseq1 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*\n\
+        uc_content = """S\t0\t17\t*\t.\t*\t*\t*\tseq4 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*
+S\t1\t12\t*\t.\t*\t*\t*\tseq3 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*
+S\t2\t12\t*\t.\t*\t*\t*\tseq2 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*
+S\t3\t12\t*\t.\t*\t*\t*\tseq1 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*
+C\t0\t1\t*\t*\t*\t*\t*\tseq4 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*
+C\t1\t1\t*\t*\t*\t*\t*\tseq3 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*
+C\t2\t1\t*\t*\t*\t*\t*\tseq2 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*
+C\t3\t1\t*\t*\t*\t*\t*\tseq1 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*
         """
         with tempfile.NamedTemporaryFile(delete=False) as uc_file:
             uc_file.write(uc_content.encode('utf-8'))
@@ -971,6 +970,7 @@ class TestTICAnalysisSimple:
         output_seq_ids = output_fasta.get_seq_ids()
         for seq_id in input_seq_ids:
             assert seq_id in output_seq_ids
+        assert len(input_seq_ids) == len(output_seq_ids)
         # all sequences in the output file should have full taxonomy
         for taxa in output_fasta.tax_obj_list:
             assert taxa.last_known_level == "species"
@@ -978,6 +978,7 @@ class TestTICAnalysisSimple:
 
 @pytest.mark.medium_test
 class TestTICAnalysis:
+    REPEAT_PARAMETER = 3
 
     def setup_method(self):
         self.fasta_file_path = pl.Path(__file__).parent.joinpath("input_sequences_first1000.fasta").resolve()
@@ -1003,18 +1004,115 @@ class TestTICAnalysis:
             lines = f.readlines()
         assert len(lines) == 1000
         # Clean up
+        # sequence ids of input and output fasta files should be the same
+        # Because all sequences input file have known taxonomy upto the order level
+        # then all sequences in the output file of this should have the same taxonomy
+        output_fasta = stic.TaxedFastaFile(all_knwon_order_fasta_path)
+        input_seq_ids = self.tic_analysis.fasta_file.get_seq_ids()
+        output_seq_ids = output_fasta.get_seq_ids()
+        for seq_id in input_seq_ids:
+            assert seq_id in output_seq_ids
+        assert len(input_seq_ids) == len(output_seq_ids)
+        # cleanup
         all_knwon_order_fasta_path.unlink()
 
-    def test_complete_family_level(self):
+    @pytest.mark.parametrize("i", range(REPEAT_PARAMETER))
+    def test_complete_family_level(self, i):
+        logging.info(f"Attempt {i} of complete_family_level")
         all_knwon_order_file_path = self.tic_analysis.fill_upto_order()
         all_knwon_family_file_path = self.tic_analysis.complete_family_level(all_knwon_order_file_path)
         with open(all_knwon_family_file_path, 'r') as f:
             lines = f.readlines()
         assert len(lines) == 1000
-        # TODO 33 families should get created
+        # There should be 33 distinct FOTU in the output file
+        output_fasta = stic.TaxedFastaFile(all_knwon_family_file_path)
+        tax_obj_list = output_fasta.tax_obj_list
+        family_set = set()
+        for tax in tax_obj_list:
+            family_set.add(tax.family)
+        assert len(family_set) == 33
         # Clean up
         all_knwon_order_file_path.unlink()
         all_knwon_family_file_path.unlink()
+
+    @pytest.mark.parametrize("i", range(REPEAT_PARAMETER))
+    def test_complete_genus_level(self, i):
+        logging.info(f"Attempt {i} of complete_genus_level")
+        all_known_order_fasta_path = self.tic_analysis.fill_upto_order()
+        all_known_family_fasta_path = self.tic_analysis.complete_family_level(all_known_order_fasta_path)
+        all_known_genus_fasta_path = self.tic_analysis.complete_genus_level(all_known_family_fasta_path)
+        assert all_known_genus_fasta_path.exists()
+        with open(all_known_genus_fasta_path, 'r') as f:
+            lines = f.readlines()
+        assert len(lines) == 1000
+        # There should be 130 distinct GOTU in the output file
+        output_fasta = stic.TaxedFastaFile(all_known_genus_fasta_path)
+        tax_obj_list = output_fasta.tax_obj_list
+        genus_set = set()
+        for tax in tax_obj_list:
+            genus_set.add(tax.genus)
+        assert len(genus_set) == 130
+        # Clean up
+        all_known_genus_fasta_path.unlink()
+        all_known_family_fasta_path.unlink()
+        all_known_order_fasta_path.unlink()
+
+    @pytest.mark.parametrize("i", range(REPEAT_PARAMETER))
+    def test_complete_species_level(self, i):
+        logging.info(f"Attempt {i} of complete_species_level")
+        all_known_order_fasta_path = self.tic_analysis.fill_upto_order()
+        all_known_family_fasta_path = self.tic_analysis.complete_family_level(all_known_order_fasta_path)
+        all_known_genus_fasta_path = self.tic_analysis.complete_genus_level(all_known_family_fasta_path)
+        all_known_species_fasta_path = self.tic_analysis.complete_species_level(all_known_genus_fasta_path)
+        assert all_known_species_fasta_path.exists()
+        with open(all_known_species_fasta_path, 'r') as f:
+            lines = f.readlines()
+        assert len(lines) == 1000
+        # There should be 1000 distinct SOTU in the output file
+        output_fasta = stic.TaxedFastaFile(all_known_species_fasta_path)
+        tax_obj_list = output_fasta.tax_obj_list
+        species_set = set()
+        for tax in tax_obj_list:
+            species_set.add(tax.species)
+        # TODO the assertion below fails as number of speices generated is not consistent
+        # it could be any values between 405 and 412
+        logging.warning(
+            "Number of species generated: %s", len(species_set)
+        )
+        logging.warning(
+            "The number of speices generated is not consistent. It could be any values between 405 and 412!!!"
+        )
+        assert len(species_set) in list(range(405, 412))
+        # Clean up
+        all_known_species_fasta_path.unlink()
+        all_known_genus_fasta_path.unlink()
+        all_known_family_fasta_path.unlink()
+        all_known_order_fasta_path.unlink()
+
+    # TODO Check the following
+    @pytest.mark.parametrize("i", range(REPEAT_PARAMETER))
+    def test_run(self, i):
+        logging.info(f"Attempt {i} of running TICAnalysis")
+        output_fasta_path = self.tic_analysis.run()
+        assert output_fasta_path.exists()
+        with open(output_fasta_path, 'r') as f:
+            lines = f.readlines()
+        assert len(lines) == 1000
+        # sequence ids of input and output fasta files should be the same
+        output_fasta = stic.TaxedFastaFile(output_fasta_path)
+        input_seq_ids = self.tic_analysis.fasta_file.get_seq_ids()
+        output_seq_ids = output_fasta.get_seq_ids()
+        for seq_id in input_seq_ids:
+            assert seq_id in output_seq_ids
+        assert len(input_seq_ids) == len(output_seq_ids)
+        # all sequences in the output file should have full taxonomy
+        for taxa in output_fasta.tax_obj_list:
+            assert taxa.last_known_level == "species"
+        
+    def test_taxonomy_consistency(self):
+        # TODO Implement this test
+        pass
+
 
 if __name__ == '__main__':
     pytest.main()
