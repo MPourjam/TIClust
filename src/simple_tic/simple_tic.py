@@ -6,6 +6,7 @@ import tempfile
 import shutil
 import logging
 import pathlib as pl
+from os import cpu_count
 from collections import defaultdict, OrderedDict
 from typing import List, Dict, Set, Tuple, Optional, Union
 from concurrent.futures import ThreadPoolExecutor
@@ -1225,7 +1226,15 @@ class TICAnalysis:
     def __init__(self, taxed_fasta_file_path: pl.Path):
         self.fasta_file = TaxedFastaFile(taxed_fasta_file_path)
         self.tic_wd = self.fasta_file.fasta_file_path.parent / "TIC-WD"
+        if self.tic_wd.exists():
+            logging.warning(
+                "TIC work directory already exists. Running TIC will overwrite it."
+            )
         self.uclust_wd = self.tic_wd / "Uclust-WD"
+        if self.uclust_wd.exists():
+            logging.warning(
+                "Uclust work directory already exists. Running TIC will overwrite it."
+            )
         self.fotu_gotu_file_path = self.tic_wd / "Map-FOTU-GOTU.tab"
         self.gotu_sotu_file_path = self.tic_wd / "Map-GOTU-SOTU.tab"
         self.sotu_zotu_file_path = self.tic_wd / "Map-SOTU-ZOTU.tab"
@@ -1245,9 +1254,16 @@ class TICAnalysis:
 
     def run(
             self,
-            threads: int = 1,
+            threads: int = int(cpu_count() * 0.75),
             cluster_thresholds: Dict[str, float] = None
             ) -> None:
+        if self.tic_wd.exists():
+            logging.warning("TIC work directory already exists. Deleting it.")
+            shutil.rmtree(self.tic_wd)
+        self.uclust_wd = self.tic_wd / "Uclust-WD"
+        if self.uclust_wd.exists():
+            logging.warning("Uclust work directory already exists. Deleting it.")
+            shutil.rmtree(self.uclust_wd)
         self.threads = threads
         if cluster_thresholds:
             self.cluster_thresholds = cluster_thresholds
@@ -1292,11 +1308,10 @@ class TICAnalysis:
         return sub_clusters_list
 
     def __get_fasta_file(self, file_stem_name: str, make_unique: bool = True) -> TaxedFastaFile:
-        input_fasta_parent_path = self.fasta_file.fasta_file_path.parent
         # Add some random parts to file_stem_name so that it does not overwrite other file
         if make_unique:
             file_stem_name = next(tempfile._get_candidate_names()) + "_" + file_stem_name
-        target_fasta_file_path = input_fasta_parent_path / f"{str(file_stem_name)}.fasta"
+        target_fasta_file_path = self.tic_wd / f"{str(file_stem_name)}.fasta"
         # deleting the file if it exists
         if target_fasta_file_path.exists():
             target_fasta_file_path.unlink()
