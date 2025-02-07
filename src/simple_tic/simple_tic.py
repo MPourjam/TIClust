@@ -1530,10 +1530,19 @@ class TICAnalysis:
     def __del__(self):
         shutil.rmtree(self.uclust_wd, ignore_errors=True)
 
-    # when the object is deleted, the temporary directory should be deleted
-    def __exit__(self, exc_type, exc_value, traceback):
+
+    def cleanup(self, full: bool = False):
+        if full:
+            shutil.rmtree(self.tic_wd, ignore_errors=True)
         shutil.rmtree(self.uclust_wd, ignore_errors=True)
-        self.tic_output_fasta_path.unlink()
-        self.fotu_gotu_file_path.unlink()
-        self.gotu_sotu_file_path.unlink()
-        self.sotu_zotu_file_path.unlink()
+
+    def __enter__(self):
+        return self
+
+    # when the object is deleted, the temporary directory should be deleted
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        full_cleanup = False
+        if exc_type is not None:
+            logging.error("An error occurred while running TIC. Error: %s", exc_value)
+            full_cleanup = True
+        self.cleanup(full=full_cleanup)
