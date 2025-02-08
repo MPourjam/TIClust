@@ -1201,6 +1201,7 @@ class TestTICAnalysis:
         # TODO Implement this test
         pass
 
+
 @pytest.mark.non_bacteria_test
 class TestTICAnalysisNonBacteria:
 
@@ -1217,7 +1218,7 @@ class TestTICAnalysisNonBacteria:
         all_knwon_order_fasta_path = self.tic_analysis.fill_upto_order()
         with open(all_knwon_order_fasta_path, 'r') as f:
             lines = f.readlines()
-        assert len(lines) == 46
+        assert len(lines) == 212
         # Clean up
         all_knwon_order_fasta_path.unlink()
 
@@ -1226,7 +1227,7 @@ class TestTICAnalysisNonBacteria:
         all_knwon_family_file_path = self.tic_analysis.complete_family_level(all_knwon_order_file_path)
         with open(all_knwon_family_file_path, 'r') as f:
             lines = f.readlines()
-        assert len(lines) == 212
+        assert len(lines) == 522
         # Clean up
         all_knwon_family_file_path.unlink()
         all_knwon_order_file_path.unlink()
@@ -1238,7 +1239,7 @@ class TestTICAnalysisNonBacteria:
         assert all_known_genus_fasta_path.exists()
         with open(all_known_genus_fasta_path, 'r') as f:
             lines = f.readlines()
-        assert len(lines) == 261 * 2
+        assert len(lines) == 1314
         # Clean up
         all_known_genus_fasta_path.unlink()
         all_known_family_fasta_path.unlink()
@@ -1264,24 +1265,39 @@ class TestTICAnalysisNonBacteria:
         self.tic_analysis.append_non_bacteria_seqs(output_file_path)
         with open(output_file_path, 'r') as f:
             lines = f.readlines()
-        assert len(lines) == 46
+        assert len(lines) == 688
         output_file_path.unlink()
 
     def test_run(self):
         self.tic_analysis.run()
         output_fasta_path = self.tic_analysis.tic_output_fasta_path
-        # with open(output_fasta_path, 'r') as f:
-        #     lines = f.readlines()
-        # # sequence ids of input and output fasta files should be the same
-        # output_fasta = stic.TaxedFastaFile(output_fasta_path)
-        # input_seq_ids = self.tic_analysis.fasta_file.get_seq_ids()
-        # output_seq_ids = output_fasta.get_seq_ids()
-        # for seq_id in input_seq_ids:
-        #     assert seq_id in output_seq_ids
-        # assert len(input_seq_ids) == len(output_seq_ids)
+        with open(output_fasta_path, 'r') as f:
+            lines = f.readlines()
+        # sequence ids of input and output fasta files should be the same
+        output_fasta = stic.TaxedFastaFile(output_fasta_path)
+        bac_input_seqs = [] + self.tic_analysis.filter_bac_seq_last_kown_at("kingdom", flatten=True)
+        bac_input_seqs += self.tic_analysis.filter_bac_seq_last_kown_at("phylum", flatten=True)
+        bac_input_seqs += self.tic_analysis.filter_bac_seq_last_kown_at("class", flatten=True)
+        bac_input_seqs += self.tic_analysis.filter_bac_seq_last_kown_at("order", flatten=True)
+        bac_input_seqs += self.tic_analysis.filter_bac_seq_last_kown_at("family", flatten=True)
+        bac_input_seqs += self.tic_analysis.filter_bac_seq_last_kown_at("genus", flatten=True)
+        bac_input_seqs += self.tic_analysis.filter_bac_seq_last_kown_at("species", flatten=True)
+        bac_input_seq_ids = [seq.header.seq_id for seq in bac_input_seqs]
+        output_seq_ids = output_fasta.get_seq_ids()
+        for seq_id in bac_input_seq_ids:
+            assert seq_id in output_seq_ids
+        assert len(bac_input_seq_ids) == len(output_seq_ids)
         # all sequences in the output file should have full taxonomy
-        # for taxa in output_fasta.tax_obj_list:
-        #     assert taxa.last_known_level == "species"
+        for taxa in output_fasta.tax_obj_list:
+            assert taxa.last_known_level == "species"
+        all_input_seqs = self.tic_analysis.fasta_file.get_seq_ids()
+        non_bac_fasta = stic.TaxedFastaFile(self.tic_analysis.non_bact_fasta_path)
+        non_bac_seq_ids = non_bac_fasta.get_seq_ids()
+        tic_seq_processed_count = len(output_seq_ids) + len(non_bac_seq_ids)
+        init_seq_count = len(all_input_seqs)
+        assert tic_seq_processed_count == init_seq_count
+        # TODO Check consistency of Map files
+
 
 if __name__ == '__main__':
     pytest.main()
