@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from tic_helper import system_sub, onelinefasta
 
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 class Taxonomy:
@@ -23,7 +23,7 @@ class Taxonomy:
     # TODO tax_tag could be defined at initialization level for more flexibility.
     # Add regex template and update the tax_regex to include the user-given tax_tag.
     tax_tag = 'tax='
-    tax_regex = re.compile(r"\s?(?P<tax_tag>tax=)(?P<tax>([^;]*;)*[^;]*;?)$", re.IGNORECASE)
+    tax_regex = re.compile(r"(?P<tax_tag>tax=)(?P<tax>([^;]*;)*[^;]*;?)$", re.IGNORECASE)
     complete_taxonomy_length = 8
     level_tax_map = [
         'kingdom',
@@ -94,7 +94,7 @@ class Taxonomy:
 
     @property
     def full_tax(self) -> str:
-        return self.__full_tax
+        return self.delimiter.join(self.full_tax_list)
 
     @full_tax.setter
     def full_tax(self, full_tax: str, delimiter: str = None):
@@ -108,7 +108,7 @@ class Taxonomy:
 
     @property
     def tax_str(self) -> str:
-        return self.__tax_str
+        return self.delimiter.join(self.tax_list)
 
     @tax_str.setter
     def tax_str(self, tax_str: str):
@@ -116,10 +116,15 @@ class Taxonomy:
         self.__full_tax = self.get_clean_taxonomy(tax_str, self.delimiter, force_full_path=True)
 
     @property
+    def orig_tax(self) -> str:
+        return self.__orig_tax
+
+    @property
     def tax_list(self) -> List[str]:
         """
         It returns the taxonomy as a list of strings based on self.__tax_str.
         NOTE self.__tax_str is the cleaned original taxonomy string without implicit NA-levels.
+        NOTE if there is not valid taxonomy, self.tax_list[0] is ''
         """
         return self._get_tax_list(self.delimiter)
 
@@ -147,8 +152,10 @@ class Taxonomy:
             force_full_path: bool = False) -> str:
         delimiter = delimiter if delimiter else cls.delimiter
         clean_full_path = cls.hypo_full_tax_list.copy()
-        for ind, curr_tax in enumerate(tax_str.split(delimiter)):
+        tax_list_ = tax_str.split(delimiter)
+        for ind, curr_lev in enumerate(clean_full_path):
             valid_tax = True
+            curr_tax = tax_list_[ind] if ind < len(tax_list_) else ''
             for invalid_tax in cls.invalid_tax_rgx:
                 invalid_tax_match = invalid_tax.search(curr_tax)
                 if invalid_tax_match:
@@ -197,7 +204,8 @@ class Taxonomy:
 
     def get_level(self, level: str) -> str:
         tax_level_ind = self.level_tax_map.index(level)
-        if len(self.tax_list) > tax_level_ind:
+        # if taxonomy is empty, self.tax_list[0] is ''
+        if len(self.tax_list) > tax_level_ind and self.tax_list[0]:
             return self.tax_list[tax_level_ind]
         return f"NA-{str(level).capitalize()}"
 
@@ -222,7 +230,7 @@ class Taxonomy:
         It gets the level and checks if the taxonomy is known up to the given level.
         """
         tax_level_ind = self.level_tax_map.index(level)
-        return len(self.tax_list) > tax_level_ind
+        return len(self.tax_list) > tax_level_ind and self.tax_list[0]
 
     def get_tax_upto(
             self,
@@ -273,7 +281,7 @@ class Taxonomy:
 
     def _is_tax_complete(self) -> bool:
         # When 'ToBeDone' is in the taxonomy, it is not complete and set for completion by TIC
-        to_be_done = any(True for tax in self.tax_list if 'NA-' in tax)
+        to_be_done = any(True for tax in self.full_tax_list if 'NA-' in tax)
         complete_tax_levels = len(self.tax_list) == self.complete_taxonomy_length
         return complete_tax_levels and not to_be_done
 
@@ -283,7 +291,9 @@ class Taxonomy:
         # NOTE if the known taxonomy is continuous, the last known level is the last level.
         # Otherwise it is the level before the first unknown level.
         known_tax_levels = known_tax.tax_list
-        return self.level_tax_map[len(known_tax_levels) - 1]
+        if len(known_tax_levels) > 0 and known_tax_levels[0]:
+            return self.level_tax_map[len(known_tax_levels) - 1]
+        return ''
 
     @property
     def last_known_tax(self) -> str:
@@ -294,14 +304,19 @@ class Taxonomy:
         return f'<{self.__class__.__name__}>{self.tax_str}'
 
     def __str__(self):
-        str_tax = f"{self.tax_tag}{self.full_tax}"
-        return f'{str_tax}'
+        if self.kingdom.lower() == 'bacteria'.lower():
+            tax_str_ = f'{self.tax_tag}{self.full_tax}'
+        elif self.tax_str == '':
+            tax_str_ = ''
+        else:
+            tax_str_ = f'{self.tax_tag}{self.orig_tax}'
+        return tax_str_
 
     def __hash__(self):
         return hash((self.__tax_str, self.__full_tax, self.__orig_tax))
 
     def __bool__(self):
-        return bool(self.__tax_str)
+        return bool(self.tax_str)
 
     def __eq__(self, other):
         # NOTE taxonomy should not be case-sensitive
@@ -312,31 +327,39 @@ class Taxonomy:
 
 class SeqID:
 
-    seq_id_regex = re.compile(r"^>(?P<seq_header>[\S^;]+).*$", re.IGNORECASE)
+    seq_id_regex = re.compile(r"^>(?P<seq_header>[^\s;]+)", re.IGNORECASE)
 
     def __init__(self, header: str):
         seq_id_match = self.seq_id_regex.match(header)
         if not seq_id_match:
             raise ValueError(f"Incorrect header format for {seq_id_match}")
-        self.head_id = str(seq_id_match.group('seq_header'))
+        self.is_str = str(seq_id_match.group('seq_header'))
 
     def __repr__(self):
-        return f">{self.head_id}"
+        return f">{self.is_str}"
 
     def __str__(self):
-        return f"{self.head_id}"
+        return f"{self.is_str}"
+
+    def __eq__(self, other):
+        return str(self.is_str) == str(other)
 
 
 class SeqHeader:
 
+    header_regex = re.compile(r"^>.*$", re.IGNORECASE)
+
     def __init__(self, header: str):
+        if not self.header_regex.match(header):
+            raise ValueError(f"Incorrect header format for {header}")
         self.seq_id = SeqID(header)
         self.taxonomy = Taxonomy(header)
+        self.orig_header = header
 
     @property
     def header(self) -> str:
         seq_header = '>' + str(self.seq_id)
-        seq_header += ' ' + str(self.taxonomy) if self.taxonomy else ''
+        seq_header += ' ' + str(self.taxonomy)
         return seq_header
 
     def __repr__(self):
@@ -347,6 +370,9 @@ class SeqHeader:
 
     def __hash__(self):
         return hash(self.header)
+
+    def __eq__(self, other):
+        return self.orig_header == other.orig_header
 
 
 class Sequence:
@@ -372,7 +398,7 @@ class Sequence:
         return {self.header.taxonomy: self}
 
     def __hash__(self):
-        return hash((str(self.header), self.sequence.lower()))
+        return hash((str(self.header.orig_header), self.sequence.lower()))
 
     def __repr__(self):
         return f">{self.header.seq_id} {self.sequence[:7]}...{self.sequence[-7:]}"
@@ -605,7 +631,6 @@ class GenusCluster(SequenceCluster):
         )
 
 
-
 class FamilyCluster(SequenceCluster):
 
     def __init__(self, sequences: List[Sequence], centroid: Sequence = None):
@@ -832,15 +857,20 @@ class TaxedFastaFile(FastaFile):
 
     def __get_seq_taxonomies(self) -> List[Taxonomy]:
         headers = self.get_seq_headers()
-        taxonomies = [header.taxonomy for header in headers]
         # NOTE we might need to omit the check for tax as sequences without
         # taxnomoies are planned to be written to output file untouched
-        if any(True for tax in taxonomies if not tax):
-            print("Some sequences do not have any taxonomy information.")
-        return taxonomies
+        taxonomies = []
+        for header in headers:
+            tax = header.taxonomy
+            # if not tax:
+            #     logging.warning("Taxonomy is not available for %s", header.seq_id)
+            taxonomies.append(tax)
+
+        return list(set(taxonomies))
 
     def filter_seq_by_tax(self, taxonomy: Taxonomy) -> List[Sequence]:
         sequences = []
+        logging.debug("Filtering sequences by %s", taxonomy)
         with open(self.fasta_file_path, 'r', encoding='utf-8') as fasta:
             curr_line = fasta.readline().strip()
             seq_str = ''
@@ -941,6 +971,23 @@ class TaxedFastaFile(FastaFile):
         sorted(map_list, key=lambda x: x[0])
 
         return list(set(map_list))
+
+    def filter_seq_by_level_value(self, level: str, value: str) -> List[Sequence]:
+        """
+        It returns a list of sequences that have the given value at the given level.
+
+        :param level: The taxonomy level to be checked.
+        :param value: The value to be checked.
+
+        :return: List[Sequence]
+        """
+        taxs = self.tax_obj_list
+        seqs = []
+        for tax in taxs:
+            if tax.get_level(level) == value:
+                logging.debug("Checking %s", tax)
+                seqs += self.filter_seq_by_tax(tax)
+        return seqs
 
 
 class TreeNode:
@@ -1069,7 +1116,7 @@ class TICUClust:
     def run_uclust(
             self,
             sequences: List[Sequence],
-            cluster_id: float = 0.987,
+            cluster_threshold: float = 0.987,
             cut_tax: bool = False) -> Tuple[pl.Path, dict]:
         """
         It runs uclust_smallmem on the input fasta file and
@@ -1098,7 +1145,7 @@ class TICUClust:
             "-uc",
             str(uc_file),
             "-id",
-            str(cluster_id),
+            str(cluster_threshold),
             "-strand",
             "both",
         ]
@@ -1132,6 +1179,7 @@ class TICUClust:
                     line_tokens = line.split("\t")
                     query = line_tokens[8]
                     target_centroid = line_tokens[9]
+                    sim_ = round(float(line_tokens[3]), 5)
                     # omitting the taxonomic information
                     if cut_tax:
                         query = tax_reg.sub("", query).strip()
@@ -1140,31 +1188,46 @@ class TICUClust:
                     # As uclust removes the '>' from the query
                     target_centroid = '>' + target_centroid
                     query = '>' + query
-                    cluster_members = uc_dict.get(target_centroid, [])
-                    cluster_members.append(query)
-                    uc_dict[target_centroid] = cluster_members
+                    matched_clusters = uc_dict.get(query, [])
+                    matched_clusters.append((target_centroid, sim_))
+                    uc_dict[query] = matched_clusters
                 elif line.startswith("S"):
+                    # case for singletons
                     line_tokens = line.split("\t")
                     centroid = line_tokens[8]
+                    sim_ = round(float(100), 5)
                     # omitting the taxonomic information
                     if cut_tax:
                         centroid = tax_reg.sub("", centroid).strip()
                     # prepending '>' to the centroid
                     centroid = '>' + centroid
-                    cluster_members = uc_dict.get(centroid, [])
-                    # the centroid is always the first element in the list
-                    cluster_members.insert(0, centroid)
-                    uc_dict[centroid] = cluster_members
+                    query = centroid
+                    matched_clusters = uc_dict.get(query, [])
+                    matched_clusters.append((centroid, sim_))
+                    uc_dict[query] = matched_clusters
                 line = uc_h.readline().strip()
+        # some sequences might match more than one more centers
+        # we will keep the one with the highest similarity
+        cent_members_dict = {}
+        for member, cent_matches in uc_dict.items():
+            cent_matches = sorted(cent_matches, key=lambda x: x[1], reverse=True)
+            cent_id = cent_matches[0][0]
+            mems_list = cent_members_dict.get(cent_id, [cent_id])
+            mems_list.append(member)
+            cent_members_dict[cent_id] = mems_list
 
-        return uc_dict
+        return cent_members_dict
 
     def get_sequences_clusters(
             self,
             sequences: List[Sequence],
-            cluster_id: float) -> List[SequenceCluster]:
+            cluster_threshold: float) -> List[SequenceCluster]:
         clusters = []
-        input_fasta_path, cent_clust_dict = self.run_uclust(sequences, cluster_id, cut_tax=True)
+        input_fasta_path, cent_clust_dict = self.run_uclust(
+            sequences,
+            cluster_threshold,
+            cut_tax=True
+        )
         input_fasta = TaxedFastaFile(input_fasta_path)
         for _, seqs_id in cent_clust_dict.items():
             # First element in the seqs_id is the centroid
@@ -1221,25 +1284,32 @@ class TICAnalysis:
         'genus': 0.95,
         'species': 0.987,
     })
-
+    default_output_fasta_name = "TIC-FullTaxonomy.fasta"
+    default_non_bact_fasta_name = "Non-Bacteria-Sequences.fasta"
+    default_fotu_gotu_file_name = "Map-FOTU-GOTU.tab"
+    default_gotu_sotu_file_name = "Map-GOTU-SOTU.tab"
+    default_sotu_zotu_file_name = "Map-SOTU-ZOTU.tab"
+    default_work_dir_name = "TIC-WD"
+    default_uclust_work_dir_name = "Uclust-WD"
 
     def __init__(self, taxed_fasta_file_path: pl.Path):
         self.fasta_file = TaxedFastaFile(taxed_fasta_file_path)
-        self.tic_wd = self.fasta_file.fasta_file_path.parent / "TIC-WD"
+        self.tic_wd = self.fasta_file.fasta_file_path.parent / self.default_work_dir_name
         if self.tic_wd.exists():
             logging.warning(
                 "TIC work directory already exists. Running TIC overwrites it."
             )
             shutil.rmtree(self.tic_wd)
-        self.uclust_wd = self.tic_wd / "Uclust-WD"
+        self.uclust_wd = self.tic_wd / self.default_uclust_work_dir_name
         # creating the directories
         self.tic_wd.mkdir(parents=True, exist_ok=True)
         self.uclust_wd.mkdir(parents=True, exist_ok=True)
         # creating the file paths
-        self.fotu_gotu_file_path = self.tic_wd / "Map-FOTU-GOTU.tab"
-        self.gotu_sotu_file_path = self.tic_wd / "Map-GOTU-SOTU.tab"
-        self.sotu_zotu_file_path = self.tic_wd / "Map-SOTU-ZOTU.tab"
-        self.tic_output_fasta_path = self.tic_wd / "TIC-FullTaxonomy.fasta"
+        self.non_bact_fasta_path = self.tic_wd / self.default_non_bact_fasta_name
+        self.fotu_gotu_file_path = self.tic_wd / self.default_fotu_gotu_file_name
+        self.gotu_sotu_file_path = self.tic_wd / self.default_gotu_sotu_file_name
+        self.sotu_zotu_file_path = self.tic_wd / self.default_sotu_zotu_file_name
+        self.tic_output_fasta_path = self.tic_wd / self.default_output_fasta_name
         # creating the lists
         self.fotu_gotu_list: List[Tuple[str, str]] = []
         self.gotu_sotu_list: List[Tuple[str, str]] = []
@@ -1253,6 +1323,7 @@ class TICAnalysis:
             tax for tax in this_level_known_tax
             if tax.kingdom == 'Bacteria'
         ]
+        this_level_known_tax = list(set(this_level_known_tax))
         return this_level_known_tax
 
     def run(
@@ -1272,6 +1343,8 @@ class TICAnalysis:
         self.write_fotu_gotu_map_to_file(all_known_genus_fasta_path)
         self.write_gotu_sotu_map_to_file(all_known_species_fasta_path)
         self.write_sotu_zotu_map_to_file(all_known_species_fasta_path)
+        # writing non-bacteria sequences to the output fasta
+        self.append_non_bacteria_seqs(self.non_bact_fasta_path)
         # deleting the intermediate files
         all_known_order_fasta_path.unlink()
         all_known_family_fasta_path.unlink()
@@ -1279,7 +1352,7 @@ class TICAnalysis:
         # log the output fasta file path
         logging.info("Output fasta wrote to %s", all_known_species_fasta_path)
 
-        shutil.rmtree(self.uclust_wd)
+        shutil.rmtree(self.uclust_wd, ignore_errors=True)
         return all_known_species_fasta_path
 
     def grow_taxonomy(
@@ -1315,13 +1388,31 @@ class TICAnalysis:
         target_fasta_file_obj = TaxedFastaFile(target_fasta_file_path)
         return target_fasta_file_obj
 
+    def filter_bac_seq_last_kown_at(self, level: str, flatten: bool = False) -> List[Sequence]:
+        last_known_ = self.filter_tax_set_at_last_known_level(level)
+        last_known_bac = [
+            tax for tax in last_known_
+            if tax.kingdom == 'Bacteria'
+        ]
+        last_known_bac = list(set(last_known_bac))
+        seqs = []
+        for tax in last_known_bac:
+            seqs.append(self.fasta_file.filter_seq_by_tax(tax))
+        seqs = [seq_list for seq_list in seqs if seq_list]
+        if flatten:
+            seqs = [seq for seq_list in seqs for seq in seq_list]
+        return seqs
+
     def fill_upto_order(self) -> pl.Path:
-        last_known_kingdoms = self.filter_tax_set_at_last_known_level('kingdom')
+        """
+        It completes the taxonomy upto order level for the sequences known upto kingdom level.
+        NOTE: returned fasta file will have all the bacterial sequences filled upto order level
+        """
+        last_known_kingdoms = self.filter_bac_seq_last_kown_at('kingdom')
         clusters_to_fill = []
-        for knwon_king_tax in last_known_kingdoms:
-            seq_known_upto_kingdom = self.fasta_file.filter_seq_by_tax(knwon_king_tax)
+        for known_king_seq in last_known_kingdoms:
             seq_cluster = KingdomCluster(
-                seq_known_upto_kingdom
+                known_king_seq
             )
             kingdom_ = seq_cluster.centroid.header.taxonomy.kingdom
             seq_cluster.set_level('phylum', 'NA_phylum__' + kingdom_)
@@ -1329,47 +1420,57 @@ class TICAnalysis:
             seq_cluster.set_level('order', 'NA_order__' + kingdom_)
             clusters_to_fill.append(seq_cluster)
 
-        last_known_phylums = self.filter_tax_set_at_last_known_level('phylum')
-        for known_phyl_tax in last_known_phylums:
-            seq_known_upto_phylum = self.fasta_file.filter_seq_by_tax(known_phyl_tax)
+        last_known_pyl_bacteria = self.filter_bac_seq_last_kown_at('phylum')
+        for known_phyl_seq in last_known_pyl_bacteria:
             seq_cluster = PhylumCluster(
-                seq_known_upto_phylum
+                known_phyl_seq
             )
             phylum_ = seq_cluster.centroid.header.taxonomy.phylum
             seq_cluster.set_level('class', 'NA_class__' + phylum_)
             seq_cluster.set_level('order', 'NA_order__' + phylum_)
             clusters_to_fill.append(seq_cluster)
 
-        last_known_classes = self.filter_tax_set_at_last_known_level('class')
-        for known_class_tax in last_known_classes:
-            seq_known_upto_class = self.fasta_file.filter_seq_by_tax(known_class_tax)
+        last_known_class_bacteria = self.filter_bac_seq_last_kown_at('class')
+        for known_class_seq in last_known_class_bacteria:
             seq_cluster = ClassCluster(
-                seq_known_upto_class
+                known_class_seq
             )
             class_ = seq_cluster.centroid.header.taxonomy.class_
             seq_cluster.set_level('order', 'NA_order__' + class_)
             clusters_to_fill.append(seq_cluster)
 
         all_knwon_order_fasta = self.__get_fasta_file("All-Known-Order")
-        for this_cluster in clusters_to_fill:
-            seq_list_to_write = list(this_cluster)
-            all_knwon_order_fasta.write_to_fasta_file(sequences=seq_list_to_write, mode='a')
-
-        # append all sequences known upto order level to output fasta
-        self.fasta_file.write_seqs_last_known_at(
-            'order',
-            all_knwon_order_fasta.fasta_file_path,
-            'a'
+        seq_list_to_write = [
+            seq_ for seq_cluster in clusters_to_fill for seq_ in seq_cluster
+        ]
+        all_knwon_order_fasta.write_to_fasta_file(sequences=seq_list_to_write, mode='a')
+        # we append all originally known sequences upto order level to the output fasta
+        last_known_orders_from_input_fasta = self.filter_bac_seq_last_kown_at('order', flatten=True)
+        all_knwon_order_fasta.write_to_fasta_file(
+            sequences=last_known_orders_from_input_fasta,
+            mode='a'
         )
 
         return all_knwon_order_fasta.fasta_file_path
 
     def complete_family_level(self, all_known_order_fasta_path: pl.Path) -> pl.Path:
+        """
+        It completes the taxonomy upto family level for the sequences known upto order level.
+        NOTE: All the sequences in the input fasta file should be known upto order level and 
+        should be from 'Bacteria' kingdom
+        """
         all_known_order_fasta = TaxedFastaFile(all_known_order_fasta_path)
+        # Due to filter_bac_seq_last_kown_at, we are sure that the last known level is 'order'
+        # and all the sequences are from 'Bacteria' kingdom
         last_known_order_taxs = all_known_order_fasta.filter_tax_set_at_last_known_level('order')
+        # Below is for getting sure that we are working with only bacteria
+        last_known_ord_bacteria = [
+            tax for tax in last_known_order_taxs
+            if tax.kingdom == 'Bacteria'
+        ]
         args_list = [
             (tax, all_known_order_fasta.fasta_file_path, self.cluster_thresholds['family'])
-            for tax in last_known_order_taxs
+            for tax in last_known_ord_bacteria
         ]
         with ThreadPoolExecutor(max_workers=self.threads) as executor:
             result_clusters = list(
@@ -1382,28 +1483,49 @@ class TICAnalysis:
             for result in result_clusters:
                 pass
         all_known_family_fasta = self.__get_fasta_file("All-Known-Family")
+        all_known_family_seq_to_write = []
         for ind, clusters_list in enumerate(result_clusters):
             ind += 1
             for inner_ind, cluster in enumerate(clusters_list):
                 inner_ind += 1
                 cluster.set_level('family', 'FOTU' + self.concat_nums(ind, inner_ind))
-                all_known_family_fasta.write_to_fasta_file(sequences=list(cluster), mode='a')
-        logging.info("Completed family level for %s orders.", str(len(result_clusters)))
-
-        # append all sequences known upto family level to output fasta
-        self.fasta_file.write_seqs_last_known_at(
-            'family',
-            all_known_family_fasta.fasta_file_path,
-            'a'
+                all_known_family_seq_to_write += list(cluster)
+        all_known_family_fasta.write_to_fasta_file(
+            sequences=all_known_family_seq_to_write,
+            mode='a'
         )
+
+        logging.info("Completed family level for %s orders.", str(len(result_clusters)))
+        # we append all originally known sequences upto family level to the output fasta
+        last_known_families_from_input_fasta = self.filter_bac_seq_last_kown_at(
+            'family',
+            flatten=True
+        )
+        all_known_family_fasta.write_to_fasta_file(
+            sequences=last_known_families_from_input_fasta,
+            mode='a'
+        )
+
         return all_known_family_fasta.fasta_file_path
 
     def complete_genus_level(self, all_known_family_fasta_path: pl.Path) -> pl.Path:
+        """
+        It completes the taxonomy upto genus level for the sequences known upto family level.
+        NOTE: All the sequences in the input fasta file should be known upto family level and
+        should be from 'Bacteria' kingdom
+        """
         all_known_family_fasta = TaxedFastaFile(all_known_family_fasta_path)
+        # Due to filter_bac_seq_last_kown_at, we are sure that the last known level is 'family'
+        # and all the sequences are from 'Bacteria' kingdom
         last_known_family_taxs = all_known_family_fasta.filter_tax_set_at_last_known_level('family')
+        # Below is for getting sure that we are working with only bacteria
+        last_known_fam_bacteria = [
+            tax for tax in last_known_family_taxs
+            if tax.kingdom == 'Bacteria'
+        ]
         args_list = [
             (tax, all_known_family_fasta.fasta_file_path, self.cluster_thresholds['genus'])
-            for tax in last_known_family_taxs
+            for tax in last_known_fam_bacteria
         ]
         with ThreadPoolExecutor(max_workers=self.threads) as executor:
             result_clusters = list(
@@ -1416,29 +1538,45 @@ class TICAnalysis:
             for result in result_clusters:
                 pass
         all_known_genus_fasta = self.__get_fasta_file("All-Known-Genus")
+        all_known_genus_to_write = []
         for ind, clusters_list in enumerate(result_clusters):
             ind += 1
             for inner_ind, cluster in enumerate(clusters_list):
                 inner_ind += 1
                 gotu_id = 'GOTU' + self.concat_nums(ind, inner_ind)
                 cluster.set_level('genus', gotu_id)
-                all_known_genus_fasta.write_to_fasta_file(sequences=list(cluster), mode='a')
-        # append all sequences known upto genus level to output fasta
-        self.fasta_file.write_seqs_last_known_at(
-            'genus',
-            all_known_genus_fasta.fasta_file_path,
-            'a'
-        )
+                all_known_genus_to_write += list(cluster)
+        all_known_genus_fasta.write_to_fasta_file(sequences=all_known_genus_to_write, mode='a')
+
         logging.info("Completed genus level for %s families.", str(len(result_clusters)))
+        # we append all originally known sequences upto genus level to the output fasta
+        last_known_genus_from_input_fasta = self.filter_bac_seq_last_kown_at('genus', flatten=True)
+        all_known_genus_fasta.write_to_fasta_file(
+            sequences=last_known_genus_from_input_fasta,
+            mode='a'
+        )
         self.fotu_gotu_list = self.get_fotu_gotu_map(all_known_family_fasta.fasta_file_path)
+
         return all_known_genus_fasta.fasta_file_path
 
     def complete_species_level(self, all_known_genus_fasta_path: pl.Path) -> pl.Path:
+        """
+        It completes the taxonomy upto species level for the sequences known upto genus level.
+        NOTE: All the sequences in the input fasta file should be known upto genus level and
+        should be from 'Bacteria' kingdom
+        """
         all_known_genus_fasta = TaxedFastaFile(all_known_genus_fasta_path)
+        # Due to filter_bac_seq_last_kown_at, we are sure that the last known level is 'genus'
+        # and all the sequences are from 'Bacteria' kingdom
         last_known_genus_taxs = all_known_genus_fasta.filter_tax_set_at_last_known_level('genus')
+        # Below is for getting sure that we are working with only bacteria
+        last_knwon_gen_bacteria = [
+            tax for tax in last_known_genus_taxs
+            if tax.kingdom == 'Bacteria'
+        ]
         args_list = [
             (tax, all_known_genus_fasta.fasta_file_path, self.cluster_thresholds['species'])
-            for tax in last_known_genus_taxs
+            for tax in last_knwon_gen_bacteria
         ]
         with ThreadPoolExecutor(max_workers=self.threads) as executor:
             result_clusters = list(
@@ -1451,22 +1589,30 @@ class TICAnalysis:
             for result in result_clusters:
                 pass
         all_known_species_fasta = TaxedFastaFile(self.tic_output_fasta_path)
+        all_known_speceis_to_write = []
         for ind, clusters_list in enumerate(result_clusters):
             ind += 1
             for inner_ind, cluster in enumerate(clusters_list):
                 inner_ind += 1
                 sotu_id = 'SOTU' + self.concat_nums(ind, inner_ind)
                 cluster.set_level('species', sotu_id)
-                all_known_species_fasta.write_to_fasta_file(sequences=list(cluster), mode='a')
-        # append all sequences known upto species level to output fasta
-        self.fasta_file.write_seqs_last_known_at(
-            'species',
-            all_known_species_fasta.fasta_file_path,
-            'a'
-        )
+                all_known_speceis_to_write += list(cluster)
+        all_known_species_fasta.write_to_fasta_file(sequences=all_known_speceis_to_write, mode='a')
         logging.info("Completed species level for %s genera.", str(len(result_clusters)))
+
+        # finally we append all the sequences known upto species level to the output fasta
+        last_known_species_from_input_fasta = self.filter_bac_seq_last_kown_at(
+            'species',
+            flatten=True
+        )
+        all_known_species_fasta.write_to_fasta_file(
+            sequences=last_known_species_from_input_fasta,
+            mode='a'
+        )
+        # getting the maps
         self.gotu_sotu_list = self.get_gotu_sotu_map(all_known_species_fasta.fasta_file_path)
         self.sotu_zotu_list = self.get_sotu_zotu_map(all_known_species_fasta.fasta_file_path)
+
         return all_known_species_fasta.fasta_file_path
 
     def write_fotu_gotu_map_to_file(self, fasta_file_path: pl.Path) -> None:
@@ -1514,6 +1660,20 @@ class TICAnalysis:
 
         sorted(map_list, key=lambda x: x[0])
         return map_list
+
+    def append_non_bacteria_seqs(self, fasta_file_path: pl.Path) -> None:
+        non_bacteria_seqs = []
+        non_bacteria_seqs = self.fasta_file.filter_seq_by_level_value('kingdom', 'Archaea')
+        non_bacteria_seqs += self.fasta_file.filter_seq_by_level_value('kingdom', 'Eukaryota')
+        non_bacteria_seqs += self.fasta_file.filter_seq_by_level_value('kingdom', 'Viruses')
+        non_bacteria_seqs += self.fasta_file.filter_seq_by_level_value('kingdom', 'Viroids')
+        non_bacteria_seqs += self.fasta_file.filter_seq_by_level_value('kingdom', 'NA-Kingdom')
+        logging.info(
+            "Appending %s non-bacteria sequences to the output fasta.", str(len(non_bacteria_seqs))
+        )
+        with open(fasta_file_path, 'a', encoding='utf-8') as fasta:
+            for seq in non_bacteria_seqs:
+                fasta.write(str(seq) + '\n')
 
     @staticmethod
     def concat_nums(num_1: int, num_2: int) -> str:
