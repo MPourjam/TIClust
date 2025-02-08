@@ -1285,6 +1285,7 @@ class TICAnalysis:
         'species': 0.987,
     })
     default_output_fasta_name = "TIC-FullTaxonomy.fasta"
+    default_non_bact_fasta_name = "Non-Bacteria-Sequences.fasta"
     default_fotu_gotu_file_name = "Map-FOTU-GOTU.tab"
     default_gotu_sotu_file_name = "Map-GOTU-SOTU.tab"
     default_sotu_zotu_file_name = "Map-SOTU-ZOTU.tab"
@@ -1304,6 +1305,7 @@ class TICAnalysis:
         self.tic_wd.mkdir(parents=True, exist_ok=True)
         self.uclust_wd.mkdir(parents=True, exist_ok=True)
         # creating the file paths
+        self.non_bact_fasta_path = self.tic_wd / self.default_non_bact_fasta_name
         self.fotu_gotu_file_path = self.tic_wd / self.default_fotu_gotu_file_name
         self.gotu_sotu_file_path = self.tic_wd / self.default_gotu_sotu_file_name
         self.sotu_zotu_file_path = self.tic_wd / self.default_sotu_zotu_file_name
@@ -1342,7 +1344,7 @@ class TICAnalysis:
         self.write_gotu_sotu_map_to_file(all_known_species_fasta_path)
         self.write_sotu_zotu_map_to_file(all_known_species_fasta_path)
         # writing non-bacteria sequences to the output fasta
-        self.append_non_bacteria_seqs(self.tic_wd / "Non-Bacteria-Sequences.fasta")
+        self.append_non_bacteria_seqs(self.non_bact_fasta_path)
         # deleting the intermediate files
         all_known_order_fasta_path.unlink()
         all_known_family_fasta_path.unlink()
@@ -1350,7 +1352,7 @@ class TICAnalysis:
         # log the output fasta file path
         logging.info("Output fasta wrote to %s", all_known_species_fasta_path)
 
-        shutil.rmtree(self.uclust_wd)
+        shutil.rmtree(self.uclust_wd, ignore_errors=True)
         return all_known_species_fasta_path
 
     def grow_taxonomy(
