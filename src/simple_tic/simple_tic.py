@@ -304,8 +304,13 @@ class Taxonomy:
         return f'<{self.__class__.__name__}>{self.tax_str}'
 
     def __str__(self):
-        str_tax = f"{self.tax_tag}{self.full_tax}"
-        return f'{str_tax}'
+        if self.kingdom.lower() == 'bacteria'.lower():
+            tax_str_ = f'{self.tax_tag}{self.full_tax}'
+        elif self.tax_str == '':
+            tax_str_ = ''
+        else:
+            tax_str_ = f'{self.tax_tag}{self.orig_tax}'
+        return tax_str_
 
     def __hash__(self):
         return hash((self.__tax_str, self.__full_tax, self.__orig_tax))
@@ -624,7 +629,6 @@ class GenusCluster(SequenceCluster):
             force_homogeneity=True,
             homogeneity_level='genus'
         )
-
 
 
 class FamilyCluster(SequenceCluster):
@@ -1112,7 +1116,7 @@ class TICUClust:
     def run_uclust(
             self,
             sequences: List[Sequence],
-            cluster_id: float = 0.987,
+            cluster_threshold: float = 0.987,
             cut_tax: bool = False) -> Tuple[pl.Path, dict]:
         """
         It runs uclust_smallmem on the input fasta file and
@@ -1141,7 +1145,7 @@ class TICUClust:
             "-uc",
             str(uc_file),
             "-id",
-            str(cluster_id),
+            str(cluster_threshold),
             "-strand",
             "both",
         ]
@@ -1175,6 +1179,7 @@ class TICUClust:
                     line_tokens = line.split("\t")
                     query = line_tokens[8]
                     target_centroid = line_tokens[9]
+                    sim_ = round(float(line_tokens[3]), 5)
                     # omitting the taxonomic information
                     if cut_tax:
                         query = tax_reg.sub("", query).strip()
@@ -1183,31 +1188,46 @@ class TICUClust:
                     # As uclust removes the '>' from the query
                     target_centroid = '>' + target_centroid
                     query = '>' + query
-                    cluster_members = uc_dict.get(target_centroid, [])
-                    cluster_members.append(query)
-                    uc_dict[target_centroid] = cluster_members
+                    matched_clusters = uc_dict.get(query, [])
+                    matched_clusters.append((target_centroid, sim_))
+                    uc_dict[query] = matched_clusters
                 elif line.startswith("S"):
+                    # case for singletons
                     line_tokens = line.split("\t")
                     centroid = line_tokens[8]
+                    sim_ = round(float(100), 5)
                     # omitting the taxonomic information
                     if cut_tax:
                         centroid = tax_reg.sub("", centroid).strip()
                     # prepending '>' to the centroid
                     centroid = '>' + centroid
-                    cluster_members = uc_dict.get(centroid, [])
-                    # the centroid is always the first element in the list
-                    cluster_members.insert(0, centroid)
-                    uc_dict[centroid] = cluster_members
+                    query = centroid
+                    matched_clusters = uc_dict.get(query, [])
+                    matched_clusters.append((centroid, sim_))
+                    uc_dict[query] = matched_clusters
                 line = uc_h.readline().strip()
+        # some sequences might match more than one more centers
+        # we will keep the one with the highest similarity
+        cent_members_dict = {}
+        for member, cent_matches in uc_dict.items():
+            cent_matches = sorted(cent_matches, key=lambda x: x[1], reverse=True)
+            cent_id = cent_matches[0][0]
+            mems_list = cent_members_dict.get(cent_id, [cent_id])
+            mems_list.append(member)
+            cent_members_dict[cent_id] = mems_list
 
-        return uc_dict
+        return cent_members_dict
 
     def get_sequences_clusters(
             self,
             sequences: List[Sequence],
-            cluster_id: float) -> List[SequenceCluster]:
+            cluster_threshold: float) -> List[SequenceCluster]:
         clusters = []
-        input_fasta_path, cent_clust_dict = self.run_uclust(sequences, cluster_id, cut_tax=True)
+        input_fasta_path, cent_clust_dict = self.run_uclust(
+            sequences,
+            cluster_threshold,
+            cut_tax=True
+        )
         input_fasta = TaxedFastaFile(input_fasta_path)
         for _, seqs_id in cent_clust_dict.items():
             # First element in the seqs_id is the centroid
