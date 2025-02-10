@@ -2,11 +2,13 @@ import unittest
 import sys
 import os
 import pytest
+import re
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 from simple_tic import simple_tic as stic
 import tic_helper as tich
 import logging
 import tempfile
+from collections import namedtuple as nt
 import pathlib as pl
 
 
@@ -188,14 +190,6 @@ class TestTaxonomy:
         assert taxonomy.get_clean_taxonomy(tax_str) == tax_str[:-1]
         full_tax = taxonomy.get_clean_taxonomy(tax_str, force_full_path=True)
         assert full_tax == tax_str + "NA-Family;NA-Genus;NA-Species"
-
-
-class TestTaxonomyNonBacteria:
-    """
-    TIC should handle non-bacteria taxonomy (more than 7 levels). 
-    Taxonomies with more than 7 levels are cut to 7 levels.
-    """
-    pass
 
 
 class TestSeqID:
@@ -976,312 +970,130 @@ C\t3\t1\t*\t*\t*\t*\t*\tseq1 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Gen
             sorted_fasta_file.unlink()
 
 
-@pytest.mark.simple_test
-class TestTICAnalysisSimple:
+seq_count_stats = nt(
+    "seq_count_stats",
+    [
+        "total_seq_count",
+        "bac_seq_count",
+        "non_bac_seq_count",
+        "new_fam_seq_count",
+        "new_gen_seq_count",
+        "new_spe_seq_count"
+    ]
+)
 
-    def setup_method(self):
-        self.fasta_file_path = pl.Path(__file__).parent.joinpath("small-test_tic_analysis.fasta").resolve()
-        self.tic_analysis = stic.TICAnalysis(self.fasta_file_path)
+cluster_params = nt(
+    "cluster_params",
+    [
+        "fam_thr",
+        "gen_thr",
+        "spe_thr"
+    ]
+)
 
-    def teardown_method(self):
-        pass
-    
-    @pytest.mark.parametrize("level", ["phylum", "class", "order", "family", "genus", "species"])
-    def test_filter_tax_set_at_last_known_level(self, level):
-        taxonomies = self.tic_analysis.filter_tax_set_at_last_known_level(level)
-        assert isinstance(taxonomies, list)
-        assert len(taxonomies) == 1  # All taxa are at the species level
-        for tax in taxonomies:
-            assert isinstance(tax, stic.Taxonomy)
-            assert tax.last_known_level == level
+fafi_stats = nt(
+    "fafi_stats",
+    [
+        "fasta_file_path",
+        "cluster_params",
+        "seq_count_stats"
+    ]
+)
 
-    def test_fill_upto_order(self):
-        all_knwon_order_fasta_path = self.tic_analysis.fill_upto_order()
-        with open(all_knwon_order_fasta_path, 'r') as f:
-            lines = f.readlines()
-        # only 3 sequences have incomplete taxonomy upto the order level
-        assert len(lines) == 8
-        # Clean up
-        all_knwon_order_fasta_path.unlink()
-
-    def test_complete_family_level(self):
-        all_knwon_order_file_path = self.tic_analysis.fill_upto_order()
-        all_knwon_family_file_path = self.tic_analysis.complete_family_level(all_knwon_order_file_path)
-        with open(all_knwon_family_file_path, 'r') as f:
-            lines = f.readlines()
-        # 4 sequences with known order level but unknown family level + 1 sequence with known family level
-        assert len(lines) == 10
-        # Clean up
-        all_knwon_family_file_path.unlink()
-        all_knwon_order_file_path.unlink()
-
-    def test_complete_genus_level(self):
-        all_known_order_fasta_path = self.tic_analysis.fill_upto_order()
-        all_known_family_fasta_path = self.tic_analysis.complete_family_level(all_known_order_fasta_path)
-        all_known_genus_fasta_path = self.tic_analysis.complete_genus_level(all_known_family_fasta_path)
-        assert all_known_genus_fasta_path.exists()
-        with open(all_known_genus_fasta_path, 'r') as f:
-            lines = f.readlines()
-        # 5 sequences with known family level but unknown genus level + 1 sequence with known genus level
-        assert len(lines) == 12
-        # Clean up
-        all_known_genus_fasta_path.unlink()
-        all_known_family_fasta_path.unlink()
-        all_known_order_fasta_path.unlink()
-
-    def test_complete_species_level(self):
-        all_known_order_fasta_path = self.tic_analysis.fill_upto_order()
-        all_known_family_fasta_path = self.tic_analysis.complete_family_level(all_known_order_fasta_path)
-        all_known_genus_fasta_path = self.tic_analysis.complete_genus_level(all_known_family_fasta_path)
-        all_known_species_fasta_path = self.tic_analysis.complete_species_level(all_known_genus_fasta_path)
-        assert all_known_species_fasta_path.exists()
-        with open(all_known_species_fasta_path, 'r') as f:
-            lines = f.readlines()
-        # 6 sequences with known genus level but unknown species level + 1 sequence with known species level
-        assert len(lines) == 14
-        # Clean up
-        all_known_species_fasta_path.unlink()
-        all_known_genus_fasta_path.unlink()
-        all_known_family_fasta_path.unlink()
-        all_known_order_fasta_path.unlink()
-
-    def test_run(self):
-        output_fasta_path = self.tic_analysis.run()
-        assert output_fasta_path.exists()
-        with open(output_fasta_path, 'r') as f:
-            lines = f.readlines()
-        # 7 sequences with known species level
-        assert len(lines) == 14
-        # sequence ids of input and output fasta files should be the same
-        output_fasta = stic.TaxedFastaFile(output_fasta_path)
-        input_seq_ids = self.tic_analysis.fasta_file.get_seq_ids()
-        output_seq_ids = output_fasta.get_seq_ids()
-        for seq_id in input_seq_ids:
-            assert seq_id in output_seq_ids
-        assert len(input_seq_ids) == len(output_seq_ids)
-        # all sequences in the output file should have full taxonomy
-        for taxa in output_fasta.tax_obj_list:
-            assert taxa.last_known_level == "species"
+INPUT_FASTAs = [
+    fafi_stats(
+        fasta_file_path="Minor_pseudo_sequences.fasta",
+        cluster_params=cluster_params(
+            fam_thr=0.9,
+            gen_thr=0.95,
+            spe_thr=0.987
+        ),
+        seq_count_stats=seq_count_stats(
+            total_seq_count=7,
+            bac_seq_count=7,
+            non_bac_seq_count=0,
+            new_fam_seq_count=5,
+            new_gen_seq_count=6,
+            new_spe_seq_count=6
+        )
+    ),
+    fafi_stats(
+        fasta_file_path="All_known_order_500_sequences.fasta",
+        cluster_params=cluster_params(
+            fam_thr=0.9,
+            gen_thr=0.95,
+            spe_thr=0.987
+        ),
+        seq_count_stats=seq_count_stats(
+            total_seq_count=500,
+            bac_seq_count=500,
+            non_bac_seq_count=0,
+            new_fam_seq_count=33,  # simple tic logs: Completed genus level for 33 families
+            new_gen_seq_count=123,  # TODO simple tic logs: Completed species level for 130 genera. But counting results in 123
+            new_spe_seq_count=408
+        )
+    ),
+    fafi_stats(
+        fasta_file_path="Mixed_kingdoms_1K_V3-V4_sequences.fasta",
+        cluster_params=cluster_params(
+            fam_thr=0.9,
+            gen_thr=0.95,
+            spe_thr=0.987
+        ),
+        seq_count_stats=seq_count_stats(
+            total_seq_count=1000,
+            bac_seq_count=1000,
+            non_bac_seq_count=0,
+            new_fam_seq_count=60,  # TODO simple tic logs: Completed genus level for 123 families. But counting results in 60
+            new_gen_seq_count=343,  # TODO simple tic logs: Completed species level for 340 genera. But counting results in 343
+            new_spe_seq_count=564
+        )
+    )
+]
 
 
-@pytest.mark.medium_test
+@pytest.mark.parametrize(
+    "in_fasta",
+    INPUT_FASTAs
+)
 class TestTICAnalysis:
-    REPEAT_PARAMETER = 3
 
-    def setup_method(self):
-        self.fasta_file_path = pl.Path(__file__).parent.joinpath("input_sequences_first1000.fasta").resolve()
+    @pytest.fixture(autouse=True)
+    def setup_method(self, in_fasta):
+        self.fasta_file_path = pl.Path(in_fasta.fasta_file_path).resolve()
         self.tic_analysis = stic.TICAnalysis(self.fasta_file_path)
+        yield
+        self.tic_analysis.cleanup(full=True)
 
-    def teardown_method(self):
-        pass
-
-    @pytest.mark.parametrize("level", ["phylum", "class", "order", "family", "genus", "species"])
-    def test_filter_tax_set_at_last_known_level(self, level):
-        taxonomies = self.tic_analysis.filter_tax_set_at_last_known_level(level)
-        assert isinstance(taxonomies, list)
-        if level == "order":
-            print(taxonomies)
-            assert len(taxonomies) == 1  # All taxa are at the species level
-        for tax in taxonomies:
-            assert isinstance(tax, stic.Taxonomy)
-            assert tax.last_known_level == level
-    
-    def test_fill_upto_order(self):
-        all_knwon_order_fasta_path = self.tic_analysis.fill_upto_order()
-        with open(all_knwon_order_fasta_path, 'r') as f:
-            lines = f.readlines()
-        assert len(lines) == 1000
-        # Clean up
-        # sequence ids of input and output fasta files should be the same
-        # Because all sequences input file have known taxonomy upto the order level
-        # then all sequences in the output file of this should have the same taxonomy
-        output_fasta = stic.TaxedFastaFile(all_knwon_order_fasta_path)
-        input_seq_ids = self.tic_analysis.fasta_file.get_seq_ids()
-        output_seq_ids = output_fasta.get_seq_ids()
-        for seq_id in input_seq_ids:
-            assert seq_id in output_seq_ids
-        assert len(input_seq_ids) == len(output_seq_ids)
-        # cleanup
-        all_knwon_order_fasta_path.unlink()
-
-    @pytest.mark.parametrize("i", range(REPEAT_PARAMETER))
-    def test_complete_family_level(self, i):
-        logging.info(f"Attempt {i} of complete_family_level")
-        all_knwon_order_file_path = self.tic_analysis.fill_upto_order()
-        all_knwon_family_file_path = self.tic_analysis.complete_family_level(all_knwon_order_file_path)
-        with open(all_knwon_family_file_path, 'r') as f:
-            lines = f.readlines()
-        assert len(lines) == 1000
-        # There should be 33 distinct FOTU in the output file
-        output_fasta = stic.TaxedFastaFile(all_knwon_family_file_path)
-        tax_obj_list = output_fasta.tax_obj_list
-        family_set = set()
-        for tax in tax_obj_list:
-            family_set.add(tax.family)
-        assert len(family_set) == 33
-        # Clean up
-        all_knwon_order_file_path.unlink()
-        all_knwon_family_file_path.unlink()
-
-    @pytest.mark.parametrize("i", range(REPEAT_PARAMETER))
-    def test_complete_genus_level(self, i):
-        logging.info(f"Attempt {i} of complete_genus_level")
-        all_known_order_fasta_path = self.tic_analysis.fill_upto_order()
-        all_known_family_fasta_path = self.tic_analysis.complete_family_level(all_known_order_fasta_path)
-        all_known_genus_fasta_path = self.tic_analysis.complete_genus_level(all_known_family_fasta_path)
-        assert all_known_genus_fasta_path.exists()
-        with open(all_known_genus_fasta_path, 'r') as f:
-            lines = f.readlines()
-        assert len(lines) == 1000
-        # There should be 130 distinct GOTU in the output file
-        output_fasta = stic.TaxedFastaFile(all_known_genus_fasta_path)
-        tax_obj_list = output_fasta.tax_obj_list
-        genus_set = set()
-        for tax in tax_obj_list:
-            genus_set.add(tax.genus)
-        assert len(genus_set) == 130
-        # Clean up
-        all_known_genus_fasta_path.unlink()
-        all_known_family_fasta_path.unlink()
-        all_known_order_fasta_path.unlink()
-
-    @pytest.mark.parametrize("i", range(REPEAT_PARAMETER))
-    def test_complete_species_level(self, i):
-        logging.info(f"Attempt {i} of complete_species_level")
-        all_known_order_fasta_path = self.tic_analysis.fill_upto_order()
-        all_known_family_fasta_path = self.tic_analysis.complete_family_level(all_known_order_fasta_path)
-        all_known_genus_fasta_path = self.tic_analysis.complete_genus_level(all_known_family_fasta_path)
-        all_known_species_fasta_path = self.tic_analysis.complete_species_level(all_known_genus_fasta_path)
-        assert all_known_species_fasta_path.exists()
-        with open(all_known_species_fasta_path, 'r') as f:
-            lines = f.readlines()
-        assert len(lines) == 1000
-        # There should be 1000 distinct SOTU in the output file
-        output_fasta = stic.TaxedFastaFile(all_known_species_fasta_path)
-        tax_obj_list = output_fasta.tax_obj_list
-        species_set = set()
-        for tax in tax_obj_list:
-            species_set.add(tax.species)
-        # TODO the assertion below fails as number of speices generated is not consistent
-        # it could be any values between 405 and 412
-        logging.warning(
-            "Number of species generated: %s", len(species_set)
-        )
-        logging.warning(
-            "The number of speices generated is not consistent. It could be any values between 405 and 412!!!"
-        )
-        assert len(species_set) in list(range(405, 412))
-        # Clean up
-        all_known_species_fasta_path.unlink()
-        all_known_genus_fasta_path.unlink()
-        all_known_family_fasta_path.unlink()
-        all_known_order_fasta_path.unlink()
-
-    # TODO Check the following
-    @pytest.mark.parametrize("i", range(REPEAT_PARAMETER))
-    def test_run(self, i):
-        logging.info(f"Attempt {i} of running TICAnalysis")
-        output_fasta_path = self.tic_analysis.run()
-        assert output_fasta_path.exists()
-        with open(output_fasta_path, 'r') as f:
-            lines = f.readlines()
-        assert len(lines) == 1000
-        # sequence ids of input and output fasta files should be the same
-        output_fasta = stic.TaxedFastaFile(output_fasta_path)
-        input_seq_ids = self.tic_analysis.fasta_file.get_seq_ids()
-        output_seq_ids = output_fasta.get_seq_ids()
-        for seq_id in input_seq_ids:
-            assert seq_id in output_seq_ids
-        assert len(input_seq_ids) == len(output_seq_ids)
-        # all sequences in the output file should have full taxonomy
-        for taxa in output_fasta.tax_obj_list:
-            assert taxa.last_known_level == "species"
-        
-    def test_taxonomy_consistency(self):
-        # TODO Implement this test
-        pass
-
-
-@pytest.mark.non_bacteria_test
-class TestTICAnalysisNonBacteria:
-
-    def setup_method(self):
-        self.fasta_file_path = pl.Path(__file__).parent.joinpath("imngs2_job_84_head_tail_1000.fasta").resolve()
-        self.tic_analysis = stic.TICAnalysis(self.fasta_file_path)
-
-    def teardown_method(self):
-        # self.fasta_file_path.unlink()
-        # self.tic_analysis.cleanup(full=True)
-        pass
-
-    def test_fill_upto_order(self):
-        all_knwon_order_fasta_path = self.tic_analysis.fill_upto_order()
-        with open(all_knwon_order_fasta_path, 'r') as f:
-            lines = f.readlines()
-        assert len(lines) == 212
-        # Clean up
-        all_knwon_order_fasta_path.unlink()
-
-    def test_complete_family_level(self):
-        all_knwon_order_file_path = self.tic_analysis.fill_upto_order()
-        all_knwon_family_file_path = self.tic_analysis.complete_family_level(all_knwon_order_file_path)
-        with open(all_knwon_family_file_path, 'r') as f:
-            lines = f.readlines()
-        assert len(lines) == 522
-        # Clean up
-        all_knwon_family_file_path.unlink()
-        all_knwon_order_file_path.unlink()
-
-    def test_complete_genus_level(self):
-        all_known_order_fasta_path = self.tic_analysis.fill_upto_order()
-        all_known_family_fasta_path = self.tic_analysis.complete_family_level(all_known_order_fasta_path)
-        all_known_genus_fasta_path = self.tic_analysis.complete_genus_level(all_known_family_fasta_path)
-        assert all_known_genus_fasta_path.exists()
-        with open(all_known_genus_fasta_path, 'r') as f:
-            lines = f.readlines()
-        assert len(lines) == 1314
-        # Clean up
-        all_known_genus_fasta_path.unlink()
-        all_known_family_fasta_path.unlink()
-        all_known_order_fasta_path.unlink()
-
-    def test_complete_species_level(self):
-        all_known_order_fasta_path = self.tic_analysis.fill_upto_order()
-        all_known_family_fasta_path = self.tic_analysis.complete_family_level(all_known_order_fasta_path)
-        all_known_genus_fasta_path = self.tic_analysis.complete_genus_level(all_known_family_fasta_path)
-        all_known_species_fasta_path = self.tic_analysis.complete_species_level(all_known_genus_fasta_path)
-        assert all_known_species_fasta_path.exists()
-        with open(all_known_species_fasta_path, 'r') as f:
-            lines = f.readlines()
-        assert len(lines) == 1314
-        # Clean up
-        all_known_species_fasta_path.unlink()
-        all_known_genus_fasta_path.unlink()
-        all_known_family_fasta_path.unlink()
-        all_known_order_fasta_path.unlink()
-
-    def test_append_non_bacteria_seqs(self, tmp_path):
-        output_file_path = self.tic_analysis.tic_wd / "NonBacteria.fasta"
-        self.tic_analysis.append_non_bacteria_seqs(output_file_path)
-        with open(output_file_path, 'r') as f:
-            lines = f.readlines()
-        assert len(lines) == 688
-        output_file_path.unlink()
-
-    def test_run(self):
+    @pytest.fixture
+    def fix_run(self):
         self.tic_analysis.run()
-        output_fasta_path = self.tic_analysis.tic_output_fasta_path
+        yield self.tic_analysis
+        self.tic_analysis.cleanup(full=True)
+
+    @pytest.fixture
+    def fix_parent_child_pairs(self):
+        tax_levels = stic.Taxonomy.level_tax_map
+        parent_child_pairs = []
+        for i in range(len(tax_levels) - 2):
+            for j in range(len(tax_levels) - 1, i, -1):
+                parent_child_pairs.append((tax_levels[i], tax_levels[j]))
+        return parent_child_pairs
+
+    def test_preserve_counts(self, fix_run):
+        tic_analysis = fix_run
+        output_fasta_path = tic_analysis.tic_output_fasta_path
         with open(output_fasta_path, 'r') as f:
             lines = f.readlines()
         # sequence ids of input and output fasta files should be the same
         output_fasta = stic.TaxedFastaFile(output_fasta_path)
-        bac_input_seqs = [] + self.tic_analysis.filter_bac_seq_last_kown_at("kingdom", flatten=True)
-        bac_input_seqs += self.tic_analysis.filter_bac_seq_last_kown_at("phylum", flatten=True)
-        bac_input_seqs += self.tic_analysis.filter_bac_seq_last_kown_at("class", flatten=True)
-        bac_input_seqs += self.tic_analysis.filter_bac_seq_last_kown_at("order", flatten=True)
-        bac_input_seqs += self.tic_analysis.filter_bac_seq_last_kown_at("family", flatten=True)
-        bac_input_seqs += self.tic_analysis.filter_bac_seq_last_kown_at("genus", flatten=True)
-        bac_input_seqs += self.tic_analysis.filter_bac_seq_last_kown_at("species", flatten=True)
+        bac_input_seqs = [] + tic_analysis.filter_bac_seq_last_kown_at("kingdom", flatten=True)
+        bac_input_seqs += tic_analysis.filter_bac_seq_last_kown_at("phylum", flatten=True)
+        bac_input_seqs += tic_analysis.filter_bac_seq_last_kown_at("class", flatten=True)
+        bac_input_seqs += tic_analysis.filter_bac_seq_last_kown_at("order", flatten=True)
+        bac_input_seqs += tic_analysis.filter_bac_seq_last_kown_at("family", flatten=True)
+        bac_input_seqs += tic_analysis.filter_bac_seq_last_kown_at("genus", flatten=True)
+        bac_input_seqs += tic_analysis.filter_bac_seq_last_kown_at("species", flatten=True)
         bac_input_seq_ids = [seq.header.seq_id for seq in bac_input_seqs]
         output_seq_ids = output_fasta.get_seq_ids()
         for seq_id in bac_input_seq_ids:
@@ -1296,7 +1108,324 @@ class TestTICAnalysisNonBacteria:
         tic_seq_processed_count = len(output_seq_ids) + len(non_bac_seq_ids)
         init_seq_count = len(all_input_seqs)
         assert tic_seq_processed_count == init_seq_count
-        # TODO Check consistency of Map files
+
+    def test_append_non_bacteria_seqs(self, fix_run):
+        tic_analysis = fix_run
+        non_bact_fasta_path = tic_analysis.non_bact_fasta_path
+        bact_counts = 0
+        non_bact_counts = 0
+        with open(tic_analysis.fasta_file.fasta_file_path, 'r') as f:
+            line = f.readline().strip()
+            while line:
+                if line.startswith(">"):
+                    if re.search(r"tax=Bacteria;", line, re.IGNORECASE):
+                        bact_counts += 1
+                    else:
+                        non_bact_counts += 1
+                line = f.readline().strip()
+        # assert non_bact_fasta_path.exists()
+        output_non_bact_counts = 0
+        with open(non_bact_fasta_path, 'r') as f:
+            line = f.readline().strip()
+            while line:
+                if line.startswith(">"):
+                    output_non_bact_counts += 1
+                line = f.readline().strip()
+        assert non_bact_counts == output_non_bact_counts
+
+    def test_taxonomy_completeness(self, fix_run):
+        tic_analysis = fix_run
+        output_fasta_path = tic_analysis.tic_output_fasta_path
+        output_fasta = stic.TaxedFastaFile(output_fasta_path)
+        tax_obj_list = output_fasta.tax_obj_list
+        for tax in tax_obj_list:
+            assert tax.last_known_level == "species"
+        assert all([tax.last_known_level == "species" for tax in tax_obj_list])
+
+    def test_taxonomy_consistency(self, fix_run, fix_parent_child_pairs):
+        tic_analysis = fix_run
+        output_fasta_path = tic_analysis.tic_output_fasta_path
+        output_fasta = stic.TaxedFastaFile(output_fasta_path)
+        tax_obj_list = output_fasta.tax_obj_list
+        #
+        phyl_king_d = {}
+        for tax in tax_obj_list:
+            for parent, child in fix_parent_child_pairs:
+                phyl_king_d.get(tax.get_level(child), []).append(tax.get_level(parent))
+
+        for child, parents in phyl_king_d.items():
+            if len(parents) > 1:
+                logging.warning(f"Taxonomy {child} has multiple parents: {parents}")
+        assert all([len(parents) == 1 for parents in phyl_king_d.values()])
+
+    # TODO merge following two test classes into this class. Use stats INPUT_FASTAs to check the results cluster counts.
+
+
+@pytest.mark.minor_test
+class TestTICAnalysisSmall:
+
+    def setup_method(self):
+        self.fasta_file_path = pl.Path(__file__).parent.joinpath("Minor_pseudo_sequences.fasta").resolve()
+        self.tic_analysis = stic.TICAnalysis(self.fasta_file_path)
+
+    def teardown_method(self):
+        # TODO self.tic_analysis.cleanup(full=True)
+        pass
+    
+    @pytest.mark.parametrize("level", ["phylum", "class", "order", "family", "genus", "species"])
+    def test_filter_tax_set_at_last_known_level(self, level):
+        taxonomies = self.tic_analysis.filter_tax_set_at_last_known_level(level)
+        assert isinstance(taxonomies, list)
+        assert len(taxonomies) == 1  # All taxa are at the species level
+        for tax in taxonomies:
+            assert isinstance(tax, stic.Taxonomy)
+            assert tax.last_known_level == level
+
+    @pytest.fixture
+    def fix_fill_upto_order(self):
+        all_known_order_fasta = self.tic_analysis.fill_upto_order()
+        yield all_known_order_fasta
+        all_known_order_fasta.unlink()
+
+    @pytest.fixture
+    def fix_complete_family_level(self, fix_fill_upto_order):
+        all_known_family_fasta = self.tic_analysis.complete_family_level(fix_fill_upto_order)
+        yield all_known_family_fasta
+        all_known_family_fasta.unlink()
+
+    @pytest.fixture
+    def fix_complete_genus_level(self, fix_complete_family_level):
+        all_known_genus_fasta = self.tic_analysis.complete_genus_level(fix_complete_family_level)
+        yield all_known_genus_fasta
+        all_known_genus_fasta.unlink()
+
+    @pytest.fixture
+    def fix_complete_species_level(self, fix_complete_genus_level):
+        all_known_species_fasta = self.tic_analysis.complete_species_level(fix_complete_genus_level)
+        yield all_known_species_fasta
+        all_known_species_fasta.unlink()
+
+    @pytest.fixture
+    def fix_run(self):
+        self.tic_analysis.run()
+        yield self.tic_analysis
+        self.tic_analysis.cleanup(full=True)
+
+    def test_fill_upto_order(self, fix_fill_upto_order):
+        with open(fix_fill_upto_order, 'r') as f:
+            lines = f.readlines()
+        # only 3 sequences have incomplete taxonomy upto the order level
+        assert len(lines) == 8
+
+    def test_complete_family_level(self, fix_complete_family_level):
+        with open(fix_complete_family_level, 'r') as f:
+            lines = f.readlines()
+        # 4 sequences with known order level but unknown family level + 1 sequence with known family level
+        assert len(lines) == 10
+
+    def test_complete_genus_level(self, fix_complete_genus_level):
+        with open(fix_complete_genus_level, 'r') as f:
+            lines = f.readlines()
+        # 5 sequences with known family level but unknown genus level + 1 sequence with known genus level
+        assert len(lines) == 12
+
+    def test_complete_species_level(self, fix_complete_species_level):
+        with open(fix_complete_species_level, 'r') as f:
+            lines = f.readlines()
+        # 6 sequences with known genus level but unknown species level + 1 sequence with known species level
+        assert len(lines) == 14
+
+    def test_run(self, fix_run):
+        tic_analysis = fix_run
+        output_fasta_path = tic_analysis.tic_output_fasta_path
+        with open(output_fasta_path, 'r') as f:
+            lines = f.readlines()
+        # 7 sequences with known species level
+        assert len(lines) == 14
+        # sequence ids of input and output fasta files should be the same
+        output_fasta = stic.TaxedFastaFile(output_fasta_path)
+        input_seq_ids = tic_analysis.fasta_file.get_seq_ids()
+        output_seq_ids = output_fasta.get_seq_ids()
+        for seq_id in input_seq_ids:
+            assert seq_id in output_seq_ids
+        assert len(input_seq_ids) == len(output_seq_ids)
+        # all sequences in the output file should have full taxonomy
+        for taxa in output_fasta.tax_obj_list:
+            assert taxa.last_known_level == "species"
+
+
+@pytest.mark.medium_test
+class TestTICAnalysisAllKnownOrder:
+    REPEAT_PARAMETER = 1
+
+    def setup_method(self):
+        self.fasta_file_path = pl.Path(__file__).parent.joinpath("All_known_order_500_sequences.fasta").resolve()
+        self.tic_analysis = stic.TICAnalysis(self.fasta_file_path)
+
+    def teardown_method(self):
+        # self.tic_analysis.cleanup(full=True)
+        pass
+
+    @pytest.mark.parametrize("level", ["phylum", "class", "order", "family", "genus", "species"])
+    def test_filter_tax_set_at_last_known_level(self, level):
+        taxonomies = self.tic_analysis.filter_tax_set_at_last_known_level(level)
+        assert isinstance(taxonomies, list)
+        if level == "order":
+            print(taxonomies)
+            assert len(taxonomies) == 1  # All taxa are at the species level
+        for tax in taxonomies:
+            assert isinstance(tax, stic.Taxonomy)
+            assert tax.last_known_level == level
+
+    @pytest.fixture
+    def fix_fill_upto_order(self):
+        all_known_order_fasta = self.tic_analysis.fill_upto_order()
+        yield all_known_order_fasta
+        all_known_order_fasta.unlink()
+
+    @pytest.fixture
+    def fix_complete_family_level(self, fix_fill_upto_order):
+        all_known_family_fasta = self.tic_analysis.complete_family_level(fix_fill_upto_order)
+        yield all_known_family_fasta
+        all_known_family_fasta.unlink()
+
+    @pytest.fixture
+    def fix_complete_genus_level(self, fix_complete_family_level):
+        all_known_genus_fasta = self.tic_analysis.complete_genus_level(fix_complete_family_level)
+        yield all_known_genus_fasta
+        all_known_genus_fasta.unlink()
+
+    @pytest.fixture
+    def fix_complete_species_level(self, fix_complete_genus_level):
+        all_known_species_fasta = self.tic_analysis.complete_species_level(fix_complete_genus_level)
+        yield all_known_species_fasta
+        # all_known_species_fasta.unlink()
+
+    @pytest.fixture
+    def fix_run(self):
+        self.tic_analysis.run()
+        yield self.tic_analysis
+        self.tic_analysis.cleanup(full=True)
+
+    def test_fill_upto_order(self, fix_fill_upto_order):
+        with open(fix_fill_upto_order, 'r') as f:
+            lines = f.readlines()
+        assert len(lines) == 1000
+        # sequence ids of input and output fasta files should be the same
+        # Because all sequences input file have known taxonomy upto the order level
+        # then all sequences in the output file of this should have the same taxonomy
+        output_fasta = stic.TaxedFastaFile(fix_fill_upto_order)
+        input_seq_ids = self.tic_analysis.fasta_file.get_seq_ids()
+        output_seq_ids = output_fasta.get_seq_ids()
+        for seq_id in input_seq_ids:
+            assert seq_id in output_seq_ids
+        assert len(input_seq_ids) == len(output_seq_ids)
+
+    @pytest.mark.parametrize("i", range(REPEAT_PARAMETER))
+    def test_complete_family_level(self, i, fix_complete_family_level):
+        logging.info(f"Attempt {i + 1} of complete_family_level")
+        with open(fix_complete_family_level, 'r') as f:
+            lines = f.readlines()
+        assert len(lines) == 1000
+        # There should be 33 distinct FOTU in the output file
+        output_fasta = stic.TaxedFastaFile(fix_complete_family_level)
+        tax_obj_list = output_fasta.tax_obj_list
+        family_set = set()
+        for tax in tax_obj_list:
+            family_set.add(tax.family)
+        assert len(family_set) == 33
+
+    @pytest.mark.parametrize("i", range(REPEAT_PARAMETER))
+    def test_complete_genus_level(self, i, fix_complete_genus_level):
+        logging.info(f"Attempt {i + 1} of complete_genus_level")
+        with open(fix_complete_genus_level, 'r') as f:
+            lines = f.readlines()
+        assert len(lines) == 1000
+        # There should be 130 distinct GOTU in the output file
+        output_fasta = stic.TaxedFastaFile(fix_complete_genus_level)
+        tax_obj_list = output_fasta.tax_obj_list
+        genus_set = set()
+        for tax in tax_obj_list:
+            genus_set.add(tax.genus)
+        assert len(genus_set) == 130
+
+    @pytest.mark.parametrize("i", range(REPEAT_PARAMETER))
+    def test_complete_species_level(self, i, fix_complete_species_level):
+        logging.info(f"Attempt {i + 1} of complete_species_level")
+        with open(fix_complete_species_level, 'r') as f:
+            lines = f.readlines()
+        assert len(lines) == 1000
+        # There should be 1000 distinct SOTU in the output file
+        output_fasta = stic.TaxedFastaFile(fix_complete_species_level)
+        tax_obj_list = output_fasta.tax_obj_list
+        species_set = set()
+        for tax in tax_obj_list:
+            species_set.add(tax.species)
+        assert len(species_set) == 412
+
+
+@pytest.mark.mixed_kingdoms_test
+class TestTICAnalysisMixedKingdoms:
+
+    def setup_method(self):
+        self.fasta_file_path = pl.Path(__file__).parent.joinpath("Mixed_kingdoms_1K_V3-V4_sequences.fasta").resolve()
+        self.tic_analysis = stic.TICAnalysis(self.fasta_file_path)
+
+    def teardown_method(self):
+        # self.fasta_file_path.unlink()
+        # self.tic_analysis.cleanup(full=True)
+        pass
+
+    # define a fixture passable to other tests in this class
+    @pytest.fixture
+    def fix_fill_upto_order(self):
+        all_known_order_fasta = self.tic_analysis.fill_upto_order()
+        yield all_known_order_fasta
+        all_known_order_fasta.unlink()
+
+    @pytest.fixture
+    def fix_complete_family_level(self, fix_fill_upto_order):
+        all_knwon_family_file_path = self.tic_analysis.complete_family_level(fix_fill_upto_order)
+        yield all_knwon_family_file_path
+        all_knwon_family_file_path.unlink()
+
+    @pytest.fixture
+    def fix_complete_genus_level(self, fix_complete_family_level):
+        all_known_genus_fasta_path = self.tic_analysis.complete_genus_level(fix_complete_family_level)
+        yield all_known_genus_fasta_path
+        all_known_genus_fasta_path.unlink()
+
+    @pytest.fixture
+    def fix_complete_species_level(self, fix_complete_genus_level):
+        all_known_species_fasta_path = self.tic_analysis.complete_species_level(fix_complete_genus_level)
+        yield all_known_species_fasta_path
+        # all_known_species_fasta_path.unlink()
+
+    @pytest.fixture
+    def fix_run(self):
+        output_fasta_path = self.tic_analysis.run()
+        yield self.tic_analysis
+        self.tic_analysis.cleanup(full=True)
+
+    def test_fill_upto_order(self, fix_fill_upto_order):
+        with open(fix_fill_upto_order, 'r') as f:
+            lines = f.readlines()
+        assert len(lines) == 212
+
+    def test_complete_family_level(self, fix_complete_family_level):
+        with open(fix_complete_family_level, 'r') as f:
+            lines = f.readlines()
+        assert len(lines) == 522
+
+    def test_complete_genus_level(self, fix_complete_genus_level):
+        with open(fix_complete_genus_level, 'r') as f:
+            lines = f.readlines()
+        assert len(lines) == 1314
+
+    def test_complete_species_level(self, fix_complete_species_level):
+        with open(fix_complete_species_level, 'r') as f:
+            lines = f.readlines()
+        assert len(lines) == 1314
 
 
 if __name__ == '__main__':
