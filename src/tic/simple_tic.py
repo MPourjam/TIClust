@@ -1096,6 +1096,7 @@ class TICUClust:
     Objects of this class will take zOTUs and cluster them using UClust.
     """
     vsearch_bin = pl.Path(tic_configs["VSEARCH_BIN_PATH"]).resolve()
+    # TODO delete usearch from git history
     uclust_work_dir = pl.Path(__file__).parent.parent.parent.joinpath('Uclust-WD').resolve()
     def __init__(
             self,

@@ -4,8 +4,7 @@ import os
 import pytest
 import re
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
-from simple_tic import simple_tic as stic
-import tic_helper as tich
+from tic import simple_tic as stic
 import logging
 import tempfile
 from collections import namedtuple as nt
@@ -891,7 +890,7 @@ class TestTICUClust:
         self.usearch_bin = pl.Path('../bin/usearch11.0.667_i86linux64').absolute()
         self.uclust_work_dir = pl.Path('./Uclust-WD').absolute()
         self.uclust_work_dir.mkdir(exist_ok=True)
-        self.ticuclust = stic.TICUClust(self.usearch_bin, self.uclust_work_dir)
+        self.ticuclust = stic.TICUClust(self.uclust_work_dir)
         self.header1 = ">seq1 tax=kingdomA;phylumA;classA;orderA"
         self.sequence1 = "ATCGATCGATCG"
         self.seq1 = stic.Sequence(self.header1, self.sequence1)
