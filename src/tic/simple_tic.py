@@ -10,10 +10,11 @@ from os import cpu_count
 from collections import defaultdict, OrderedDict
 from typing import List, Dict, Set, Tuple, Optional, Union
 from concurrent.futures import ThreadPoolExecutor
-from tic_helper import system_sub, onelinefasta
+from .tic_helper.utils import system_sub, onelinefasta
+from .tic_helper.config import tic_configs
 
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 class Taxonomy:
@@ -1094,22 +1095,22 @@ class TICUClust:
     """
     Objects of this class will take zOTUs and cluster them using UClust.
     """
-    usearch_bin = pl.Path(__file__).parent.parent.parent.joinpath('bin/usearch11.0.667_i86linux64')
-    uclust_work_dir = pl.Path(__file__).parent.parent.parent.joinpath('Uclust-WD')
+    vsearch_bin = pl.Path(tic_configs["VSEARCH_BIN_PATH"]).resolve()
+    uclust_work_dir = pl.Path(__file__).parent.parent.parent.joinpath('Uclust-WD').resolve()
     def __init__(
             self,
             uclust_work_pd: pl.Path,
-            usearch_bin: pl.Path = None
+            vsearch_bin: pl.Path = None
             ):
-        if not usearch_bin:
-            self.usearch_bin = pl.Path(self.usearch_bin).absolute().resolve()
+        if vsearch_bin is None:
+            self.vsearch_bin = pl.Path(tic_configs["VSEARCH_BIN_PATH"]).resolve()
         else:
-            self.usearch_bin = pl.Path(pl.PurePath(usearch_bin)).absolute().resolve()
+            self.vsearch_bin = pl.Path(pl.PurePath(vsearch_bin)).absolute().resolve()
 
-        if not self.usearch_bin.exists() or not self.usearch_bin.is_file():
-            raise FileNotFoundError(f"Usearch binary not found at {self.usearch_bin}")
+        if not self.vsearch_bin.exists() or not self.vsearch_bin.is_file():
+            raise FileNotFoundError(f"Vsearch binary not found at {self.vsearch_bin}")
         if uclust_work_pd.is_file():
-            raise FileNotFoundError(f"Usearch work directory is a file at {uclust_work_pd}")
+            raise FileNotFoundError(f"Vsearch work directory is a file at {uclust_work_pd}")
         uclust_work_pd.mkdir(parents=True, exist_ok=True)
         self.uclust_work_dir = uclust_work_pd
 
@@ -1137,16 +1138,16 @@ class TICUClust:
         centroids_file = input_fasta_path.parent.joinpath("cluster_centroids.fasta")
         uc_file = input_fasta_path.parent.joinpath("otu_clusters.uc")
         cmd_to_call = [
-            str(self.usearch_bin),
-            "-cluster_smallmem",
+            str(self.vsearch_bin),
+            "--cluster_smallmem",
             str(sorted_seq_file),
-            "-centroids",
+            "--centroids",
             str(centroids_file),
-            "-uc",
+            "--uc",
             str(uc_file),
-            "-id",
+            "--id",
             str(cluster_threshold),
-            "-strand",
+            "--strand",
             "both",
         ]
         system_sub(cmd_to_call, force_log=False, quiet=True)
@@ -1250,19 +1251,19 @@ class TICUClust:
         sorted_fasta_file = dir_path / f"sorted_{by}.fasta"
         if by == 'size':
             cmd_to_call_list = [
-                str(self.usearch_bin),
-                "-sortbysize",
+                str(self.vsearch_bin),
+                "--sortbysize",
                 str(to_sort_path),
-                "-fastaout",
+                "--fastaout",
                 str(sorted_fasta_file),
             ]
             system_sub(cmd_to_call_list, force_log=False, quiet=True)
         elif by == 'length':
             cmd_to_call_list = [
-                str(self.usearch_bin),
-                "-sortbylength",
+                str(self.vsearch_bin),
+                "--sortbylength",
                 str(to_sort_path),
-                "-fastaout",
+                "--output",  # usearch equivalent of --fastaout
                 str(sorted_fasta_file),
             ]
             system_sub(cmd_to_call_list, force_log=False, quiet=True)
@@ -1293,6 +1294,7 @@ class TICAnalysis:
     default_uclust_work_dir_name = "Uclust-WD"
 
     def __init__(self, taxed_fasta_file_path: pl.Path):
+        taxed_fasta_file_path = pl.Path(taxed_fasta_file_path).resolve()
         self.fasta_file = TaxedFastaFile(taxed_fasta_file_path)
         self.tic_wd = self.fasta_file.fasta_file_path.parent / self.default_work_dir_name
         if self.tic_wd.exists():
