@@ -1169,8 +1169,7 @@ class TestTICAnalysisSmall:
         self.tic_analysis = stic.TICAnalysis(self.fasta_file_path)
 
     def teardown_method(self):
-        # TODO self.tic_analysis.cleanup(full=True)
-        pass
+        self.tic_analysis.cleanup(full=True)
     
     @pytest.mark.parametrize("level", ["phylum", "class", "order", "family", "genus", "species"])
     def test_filter_tax_set_at_last_known_level(self, level):
@@ -1263,8 +1262,7 @@ class TestTICAnalysisAllKnownOrder:
         self.tic_analysis = stic.TICAnalysis(self.fasta_file_path)
 
     def teardown_method(self):
-        # self.tic_analysis.cleanup(full=True)
-        pass
+        self.tic_analysis.cleanup(full=True)
 
     @pytest.mark.parametrize("level", ["phylum", "class", "order", "family", "genus", "species"])
     def test_filter_tax_set_at_last_known_level(self, level):
@@ -1372,9 +1370,7 @@ class TestTICAnalysisMixedKingdoms:
         self.tic_analysis = stic.TICAnalysis(self.fasta_file_path)
 
     def teardown_method(self):
-        # self.fasta_file_path.unlink()
-        # self.tic_analysis.cleanup(full=True)
-        pass
+        self.tic_analysis.cleanup(full=True)
 
     # define a fixture passable to other tests in this class
     @pytest.fixture
@@ -1399,7 +1395,7 @@ class TestTICAnalysisMixedKingdoms:
     def fix_complete_species_level(self, fix_complete_genus_level):
         all_known_species_fasta_path = self.tic_analysis.complete_species_level(fix_complete_genus_level)
         yield all_known_species_fasta_path
-        # all_known_species_fasta_path.unlink()
+        all_known_species_fasta_path.unlink()
 
     @pytest.fixture
     def fix_run(self):
