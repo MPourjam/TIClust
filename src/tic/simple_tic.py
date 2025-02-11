@@ -1132,6 +1132,8 @@ class TICUClust:
             run_dir = pl.Path(temp_cluster_dir).absolute().resolve()
         run_dir.mkdir(parents=True, exist_ok=True)
         sequence_cluster = SequenceCluster(sequences, force_homogeneity=False)
+        # sequences with length below 32 will be discarded by vsearch
+        logging.warning("Vsearch will discard sequences with length below 32.")
         input_fasta_path = run_dir.joinpath("input.fasta").absolute()
         sequence_cluster.write_to_fasta(input_fasta_path)
         sorted_seq_file = self.sort_seqs(str(input_fasta_path), by="length")
