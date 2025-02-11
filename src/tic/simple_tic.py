@@ -306,7 +306,7 @@ class Taxonomy:
 
     def __str__(self):
         if self.kingdom.lower() == 'bacteria'.lower():
-            tax_str_ = f'{self.tax_tag}{self.full_tax}'
+            tax_str_ = f'{self.tax_tag}{self.tax_str}'
         elif self.tax_str == '':
             tax_str_ = ''
         else:
@@ -1097,7 +1097,6 @@ class TICUClust:
     """
     vsearch_bin = pl.Path(tic_configs["VSEARCH_BIN_PATH"]).resolve()
     # TODO delete usearch from git history
-    uclust_work_dir = pl.Path(__file__).parent.parent.parent.joinpath('Uclust-WD').resolve()
     def __init__(
             self,
             uclust_work_pd: pl.Path,
@@ -1214,7 +1213,7 @@ class TICUClust:
         for member, cent_matches in uc_dict.items():
             cent_matches = sorted(cent_matches, key=lambda x: x[1], reverse=True)
             cent_id = cent_matches[0][0]
-            mems_list = cent_members_dict.get(cent_id, [cent_id])
+            mems_list = cent_members_dict.get(cent_id, [])
             mems_list.append(member)
             cent_members_dict[cent_id] = mems_list
 
@@ -1255,7 +1254,7 @@ class TICUClust:
                 str(self.vsearch_bin),
                 "--sortbysize",
                 str(to_sort_path),
-                "--fastaout",
+                "--output",  # usearch equivalent of --fastaout
                 str(sorted_fasta_file),
             ]
             system_sub(cmd_to_call_list, force_log=False, quiet=True)
@@ -1493,6 +1492,7 @@ class TICAnalysis:
                 inner_ind += 1
                 cluster.set_level('family', 'FOTU' + self.concat_nums(ind, inner_ind))
                 all_known_family_seq_to_write += list(cluster)
+
         all_known_family_fasta.write_to_fasta_file(
             sequences=all_known_family_seq_to_write,
             mode='a'
@@ -1600,6 +1600,7 @@ class TICAnalysis:
                 sotu_id = 'SOTU' + self.concat_nums(ind, inner_ind)
                 cluster.set_level('species', sotu_id)
                 all_known_speceis_to_write += list(cluster)
+
         all_known_species_fasta.write_to_fasta_file(sequences=all_known_speceis_to_write, mode='a')
         logging.info("Completed species level for %s genera.", str(len(result_clusters)))
 
@@ -1688,7 +1689,6 @@ class TICAnalysis:
 
     def __del__(self):
         shutil.rmtree(self.uclust_wd, ignore_errors=True)
-
 
     def cleanup(self, full: bool = False):
         if full:
