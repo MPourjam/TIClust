@@ -1256,7 +1256,7 @@ class TICUClust:
                 str(self.vsearch_bin),
                 "--sortbysize",
                 str(to_sort_path),
-                "--output",  # usearch equivalent of --fastaout
+                "--output",  # vsearch equivalent of usearch --fastaout
                 str(sorted_fasta_file),
             ]
             system_sub(cmd_to_call_list, force_log=False, quiet=True)
@@ -1265,7 +1265,7 @@ class TICUClust:
                 str(self.vsearch_bin),
                 "--sortbylength",
                 str(to_sort_path),
-                "--output",  # usearch equivalent of --fastaout
+                "--output",  # vsearch equivalent of usearch --fastaout
                 str(sorted_fasta_file),
             ]
             system_sub(cmd_to_call_list, force_log=False, quiet=True)
