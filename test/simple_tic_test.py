@@ -891,38 +891,34 @@ class TestTICUClust:
         self.uclust_work_dir = pl.Path('./Uclust-WD').absolute()
         self.uclust_work_dir.mkdir(exist_ok=True)
         self.ticuclust = stic.TICUClust(self.uclust_work_dir)
-        self.header1 = ">seq1 tax=kingdomA;phylumA;classA;orderA"
-        self.sequence1 = "ATCGATCGATCG"
-        self.seq1 = stic.Sequence(self.header1, self.sequence1)
+        self.test_fasta_file_path = pl.Path("All_known_order_500_sequences.fasta")
+        self.test_fasta_file = stic.TaxedFastaFile(self.test_fasta_file_path)
+        self.sequences = self.test_fasta_file.get_sequences()
 
-        self.header2 = ">seq2 tax=kingdomA;phylumA;classA;orderA"
-        self.sequence2 = "GCTAGCTAGCTA"
-        self.seq2 = stic.Sequence(self.header2, self.sequence2)
+    @pytest.fixture
+    def fix_run_uclust(self):
+        # get a path a temporary directory
+        tmp_dir = tempfile.TemporaryDirectory(dir=self.uclust_work_dir)
+        run_dir = pl.Path(tmp_dir.name)
+        input_fasta_path = run_dir.joinpath("input.fasta").absolute()
+        sequence_cluster = stic.OrderCluster(self.sequences)
+        sequence_cluster.write_to_fasta(input_fasta_path)
+        uclust_obj = stic.TICUClust(self.uclust_work_dir)
+        yield uclust_obj
+        shutil.rmtree(tmp_dir)
 
-        self.header3 = ">seq3 tax=kingdomA;phylumA;classA;orderA"
-        self.sequence3 = "CGTACGTACGTA"
-        self.seq3 = stic.Sequence(self.header3, self.sequence3)
-
-        self.header4 = ">seq4 tax=kingdomA;phylumA;classA;orderA"
-        self.sequence4 = "TACGTACGTACGAACTG"
-        self.seq4 = stic.Sequence(self.header4, self.sequence4)
-
-        self.sequences = [self.seq4, self.seq1, self.seq2, self.seq3]
-
-    def test_run_uclust(self):
-        with tempfile.TemporaryDirectory(dir=self.uclust_work_dir) as temp_cluster_dir:
-            run_dir = pl.Path(temp_cluster_dir)
-            input_fasta_path = run_dir.joinpath("input.fasta").absolute()
-            sequence_cluster = stic.OrderCluster(self.sequences)
-            sequence_cluster.write_to_fasta(input_fasta_path)
-            file_pair_tuple = self.ticuclust.run_uclust(self.sequences, 0.987)
-            in_fasta_file_path, centroid_seq_dict = file_pair_tuple
-            assert in_fasta_file_path.exists()
-            assert isinstance(centroid_seq_dict, dict)
-            assert len(centroid_seq_dict) == 4
-            # first element in the centroid_seq_dict should be self.seq4 as it
-            # is the longest sequence
-            assert list(centroid_seq_dict.keys())[0] == str(self.seq4.header)
+    def test_run_uclust(self, fix_run_uclust):
+        uclust_obj = fix_run_uclust
+        file_pair_tuple = uclust_obj.run_uclust(self.sequences, 0.987)
+        in_fasta_file_path, centroid_seq_dict = file_pair_tuple
+        assert in_fasta_file_path.exists()
+        assert isinstance(centroid_seq_dict, dict)
+        assert len(centroid_seq_dict) == 375
+        # first element in the centroid_seq_dict should be self.seq4 as it
+        # is the longest sequence
+        # count of clusters seqs should equal to the total number of sequences
+        clusters_sequs = [seq for cent, clust in centroid_seq_dict.items() for seq in clust]
+        assert len(clusters_sequs) == len(self.sequences)
 
     def test_parse_uc_file(self):
         uc_content = """S\t0\t17\t*\t.\t*\t*\t*\tseq4 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species\t*
@@ -1212,7 +1208,7 @@ class TestTICAnalysisSmall:
     def test_fill_upto_order(self, fix_fill_upto_order):
         with open(fix_fill_upto_order, 'r') as f:
             lines = f.readlines()
-        # only 3 sequences have incomplete taxonomy upto the order level
+        # only 3 sequences have incomplete taxonomy upto the order level + 1 sequence with known order level
         assert len(lines) == 8
 
     def test_complete_family_level(self, fix_complete_family_level):
