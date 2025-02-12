@@ -1354,6 +1354,7 @@ class TICAnalysis:
         self.threads = threads
         if cluster_thresholds_d:
             self.cluster_thresholds.update(cluster_thresholds_d)
+        logging.debug("Running TIC with the following thresholds: %s", self.cluster_thresholds)
         all_known_order_fasta_path = self.fill_upto_order()
         all_known_family_fasta_path = self.complete_family_level(all_known_order_fasta_path)
         all_known_genus_fasta_path = self.complete_genus_level(all_known_family_fasta_path)

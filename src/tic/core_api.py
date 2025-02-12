@@ -13,6 +13,7 @@ def parse_arguments():
     parser.add_argument(
         "-z",
         "--zotu-table",
+        default=None,
         help="zOTUs table file path"
     )
     parser.add_argument(
@@ -28,7 +29,7 @@ def parse_arguments():
         help="Similarity threshold for genus-level clustering"
     )
     parser.add_argument(
-        "-ft"
+        "-ft",
         "--family-thr",
         default=0.9,
         help="Similarity threshold for family-level clustering"
@@ -41,7 +42,7 @@ def parse_arguments():
     )
     args = parser.parse_args()
     input_fasta_file = Path(args.fasta_file).resolve()
-    zotu_table = Path(args.zotu_table).resolve()
+    zotu_table = Path(args.zotu_table).resolve() if args.zotu_table else None
     args.fasta_file = str(input_fasta_file)
     args.zotu_table = str(zotu_table)
 
