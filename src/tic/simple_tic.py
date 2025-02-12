@@ -579,7 +579,7 @@ class SequenceCluster:
     @property
     def min_len(self) -> int:
         return min([len(seq.sequence) for seq in self.sequences])
-    
+
     @property
     def max_len(self) -> int:
         return max([len(seq.sequence) for seq in self.sequences])
@@ -1307,9 +1307,13 @@ class TICAnalysis:
     default_work_dir_name = "TIC-WD"
     default_uclust_work_dir_name = "Uclust-WD"
 
-    def __init__(self, taxed_fasta_file_path: pl.Path):
+    def __init__(
+        self,
+        taxed_fasta_file_path: pl.Path,
+        zotu_table_file: pl.Path = None):
         taxed_fasta_file_path = pl.Path(taxed_fasta_file_path).resolve()
         self.fasta_file = TaxedFastaFile(taxed_fasta_file_path)
+        self.zotu_table_file = pl.Path(zotu_table_file).resolve() if zotu_table_file else None
         self.tic_wd = self.fasta_file.fasta_file_path.parent / self.default_work_dir_name
         if self.tic_wd.exists():
             logging.warning(
@@ -1345,11 +1349,11 @@ class TICAnalysis:
     def run(
             self,
             threads: int = int(cpu_count() * 0.75),
-            cluster_thresholds: Dict[str, float] = None
+            cluster_thresholds_d: Dict[str, float] = None
             ) -> None:
         self.threads = threads
-        if cluster_thresholds:
-            self.cluster_thresholds = cluster_thresholds
+        if cluster_thresholds_d:
+            self.cluster_thresholds.update(cluster_thresholds_d)
         all_known_order_fasta_path = self.fill_upto_order()
         all_known_family_fasta_path = self.complete_family_level(all_known_order_fasta_path)
         all_known_genus_fasta_path = self.complete_genus_level(all_known_family_fasta_path)

@@ -2,13 +2,21 @@ from .simple_tic import TICAnalysis
 from .core_api import parse_arguments
 
 
-def run_simple_tic(input_fasta_file):
-    tic_anlysis = TICAnalysis(input_fasta_file)
-    tic_anlysis.run()
-
 def main():
     args = parse_arguments()
-    run_simple_tic(args.fasta_file)
+    simple_tic = TICAnalysis(
+        args.fasta_file,
+        args.zotu_table
+        )
+    threshold = {
+        "species": args.species_thr,
+        "genus": args.genera_thr,
+        "family": args.family_thr
+    }
+    simple_tic.run(
+        threads = args.threads,
+        cluster_thresholds_d = threshold
+    )
 
 if __name__ == "__main__":
     main()
