@@ -986,84 +986,55 @@ cluster_params = nt(
     ]
 )
 
-fafi_stats = nt(
-    "fafi_stats",
-    [
-        "fasta_file_path",
-        "cluster_params",
-        "seq_count_stats"
-    ]
-)
 
 INPUT_FASTAs = [
-    fafi_stats(
-        fasta_file_path="Minor_pseudo_sequences.fasta",
-        cluster_params=cluster_params(
-            fam_thr=0.9,
-            gen_thr=0.95,
-            spe_thr=0.987
-        ),
-        seq_count_stats=seq_count_stats(
-            total_seq_count=7,
-            bac_seq_count=7,
-            non_bac_seq_count=0,
-            new_fam_seq_count=5,
-            new_gen_seq_count=6,
-            new_spe_seq_count=6
-        )
+    "Minor_pseudo_sequences.fasta",
+    "All_known_order_500_sequences.fasta",
+    "Mixed_kingdoms_1K_V3-V4_sequences.fasta"
+]
+
+CLUSTER_THRESHOLDS = [
+    cluster_params(
+        fam_thr=0.9,
+        gen_thr=0.95,
+        spe_thr=0.987
     ),
-    fafi_stats(
-        fasta_file_path="All_known_order_500_sequences.fasta",
-        cluster_params=cluster_params(
-            fam_thr=0.9,
-            gen_thr=0.95,
-            spe_thr=0.987
-        ),
-        seq_count_stats=seq_count_stats(
-            total_seq_count=500,
-            bac_seq_count=500,
-            non_bac_seq_count=0,
-            new_fam_seq_count=33,  # simple tic logs: Completed genus level for 33 families
-            new_gen_seq_count=123,  # TODO simple tic logs: Completed species level for 130 genera. But counting results in 123
-            new_spe_seq_count=408
-        )
+    cluster_params(
+        fam_thr=0.95,
+        gen_thr=0.97,
+        spe_thr=0.99
     ),
-    fafi_stats(
-        fasta_file_path="Mixed_kingdoms_1K_V3-V4_sequences.fasta",
-        cluster_params=cluster_params(
-            fam_thr=0.9,
-            gen_thr=0.95,
-            spe_thr=0.987
-        ),
-        seq_count_stats=seq_count_stats(
-            total_seq_count=1000,
-            bac_seq_count=1000,
-            non_bac_seq_count=0,
-            new_fam_seq_count=60,  # TODO simple tic logs: Completed genus level for 123 families. But counting results in 60
-            new_gen_seq_count=343,  # TODO simple tic logs: Completed species level for 340 genera. But counting results in 343
-            new_spe_seq_count=564
-        )
-    )
+    cluster_params(
+        fam_thr=0.92,
+        gen_thr=0.95,
+        spe_thr=0.98
+    ),
 ]
 
 
-@pytest.mark.parametrize(
-    "in_fasta",
-    INPUT_FASTAs
-)
 class TestTICAnalysis:
 
-    @pytest.fixture(autouse=True)
-    def setup_method(self, in_fasta):
-        self.fasta_file_path = pl.Path(in_fasta.fasta_file_path).resolve()
-        self.tic_analysis = stic.TICAnalysis(self.fasta_file_path)
-        yield
-        self.tic_analysis.cleanup(full=True)
+    @pytest.fixture(params=INPUT_FASTAs)
+    def in_fasta(self, request):
+        return request.param
 
-    @pytest.fixture
-    def fix_run(self):
-        self.tic_analysis.run()
-        yield self.tic_analysis
+    @pytest.fixture(params=CLUSTER_THRESHOLDS)
+    def thresholds(self, request):
+        return request.param
+
+    @pytest.fixture(autouse=True)
+    def setup_method(self, in_fasta, thresholds):
+        self.fasta_file_path = pl.Path(in_fasta).resolve()
+        self.tic_analysis = stic.TICAnalysis(self.fasta_file_path)
+        self.tic_analysis.run(
+            cluster_thresholds_d = {
+                "family": thresholds.fam_thr,
+                "genus": thresholds.gen_thr,
+                "species": thresholds.spe_thr
+            }
+        )
+
+    def teardown_method(self):
         self.tic_analysis.cleanup(full=True)
 
     @pytest.fixture
@@ -1075,20 +1046,19 @@ class TestTICAnalysis:
                 parent_child_pairs.append((tax_levels[i], tax_levels[j]))
         return parent_child_pairs
 
-    def test_preserve_counts(self, fix_run):
-        tic_analysis = fix_run
-        output_fasta_path = tic_analysis.tic_output_fasta_path
+    def test_preserve_counts(self):
+        output_fasta_path = self.tic_analysis.tic_output_fasta_path
         with open(output_fasta_path, 'r') as f:
             lines = f.readlines()
         # sequence ids of input and output fasta files should be the same
         output_fasta = stic.TaxedFastaFile(output_fasta_path)
-        bac_input_seqs = [] + tic_analysis.filter_bac_seq_last_kown_at("kingdom", flatten=True)
-        bac_input_seqs += tic_analysis.filter_bac_seq_last_kown_at("phylum", flatten=True)
-        bac_input_seqs += tic_analysis.filter_bac_seq_last_kown_at("class", flatten=True)
-        bac_input_seqs += tic_analysis.filter_bac_seq_last_kown_at("order", flatten=True)
-        bac_input_seqs += tic_analysis.filter_bac_seq_last_kown_at("family", flatten=True)
-        bac_input_seqs += tic_analysis.filter_bac_seq_last_kown_at("genus", flatten=True)
-        bac_input_seqs += tic_analysis.filter_bac_seq_last_kown_at("species", flatten=True)
+        bac_input_seqs = [] + self.tic_analysis.filter_bac_seq_last_kown_at("kingdom", flatten=True)
+        bac_input_seqs += self.tic_analysis.filter_bac_seq_last_kown_at("phylum", flatten=True)
+        bac_input_seqs += self.tic_analysis.filter_bac_seq_last_kown_at("class", flatten=True)
+        bac_input_seqs += self.tic_analysis.filter_bac_seq_last_kown_at("order", flatten=True)
+        bac_input_seqs += self.tic_analysis.filter_bac_seq_last_kown_at("family", flatten=True)
+        bac_input_seqs += self.tic_analysis.filter_bac_seq_last_kown_at("genus", flatten=True)
+        bac_input_seqs += self.tic_analysis.filter_bac_seq_last_kown_at("species", flatten=True)
         bac_input_seq_ids = [seq.header.seq_id for seq in bac_input_seqs]
         output_seq_ids = output_fasta.get_seq_ids()
         for seq_id in bac_input_seq_ids:
@@ -1104,12 +1074,11 @@ class TestTICAnalysis:
         init_seq_count = len(all_input_seqs)
         assert tic_seq_processed_count == init_seq_count
 
-    def test_append_non_bacteria_seqs(self, fix_run):
-        tic_analysis = fix_run
-        non_bact_fasta_path = tic_analysis.non_bact_fasta_path
+    def test_append_non_bacteria_seqs(self):
+        non_bact_fasta_path = self.tic_analysis.non_bact_fasta_path
         bact_counts = 0
         non_bact_counts = 0
-        with open(tic_analysis.fasta_file.fasta_file_path, 'r') as f:
+        with open(self.tic_analysis.fasta_file.fasta_file_path, 'r') as f:
             line = f.readline().strip()
             while line:
                 if line.startswith(">"):
@@ -1128,18 +1097,16 @@ class TestTICAnalysis:
                 line = f.readline().strip()
         assert non_bact_counts == output_non_bact_counts
 
-    def test_taxonomy_completeness(self, fix_run):
-        tic_analysis = fix_run
-        output_fasta_path = tic_analysis.tic_output_fasta_path
+    def test_taxonomy_completeness(self):
+        output_fasta_path = self.tic_analysis.tic_output_fasta_path
         output_fasta = stic.TaxedFastaFile(output_fasta_path)
         tax_obj_set = output_fasta.tax_obj_set
         for tax in tax_obj_set:
             assert tax.last_known_level == "species"
         assert all([tax.last_known_level == "species" for tax in tax_obj_set])
 
-    def test_taxonomy_consistency(self, fix_run, fix_parent_child_pairs):
-        tic_analysis = fix_run
-        output_fasta_path = tic_analysis.tic_output_fasta_path
+    def test_taxonomy_consistency(self, fix_parent_child_pairs):
+        output_fasta_path = self.tic_analysis.tic_output_fasta_path
         output_fasta = stic.TaxedFastaFile(output_fasta_path)
         tax_obj_set = output_fasta.tax_obj_set
         #
