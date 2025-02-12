@@ -9,3 +9,6 @@ def run_simple_tic(input_fasta_file):
 def main():
     args = parse_arguments()
     run_simple_tic(args.fasta_file)
+
+if __name__ == "__main__":
+    main()
