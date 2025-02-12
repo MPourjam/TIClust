@@ -334,16 +334,16 @@ class SeqID:
         seq_id_match = self.seq_id_regex.match(header)
         if not seq_id_match:
             raise ValueError(f"Incorrect header format for {seq_id_match}")
-        self.is_str = str(seq_id_match.group('seq_header'))
+        self.id_str = str(seq_id_match.group('seq_header'))
 
     def __repr__(self):
-        return f">{self.is_str}"
+        return f">{self.id_str}"
 
     def __str__(self):
-        return f"{self.is_str}"
+        return f"{self.id_str}"
 
     def __eq__(self, other):
-        return str(self.is_str) == str(other)
+        return str(self.id_str) == str(other)
 
 
 class SeqHeader:
@@ -576,6 +576,14 @@ class SequenceCluster:
             return ''
         return self.sequences[0].header.taxonomy.get_tax_upto(level, only_knowns, top_down)
 
+    @property
+    def min_len(self) -> int:
+        return min([len(seq.sequence) for seq in self.sequences])
+    
+    @property
+    def max_len(self) -> int:
+        return max([len(seq.sequence) for seq in self.sequences])
+
     def __hash__(self):
         return hash([seq.__hash__ for seq in self.sequences])
 
@@ -600,6 +608,7 @@ class SequenceCluster:
                 if seq == self.centroid:
                     continue
                 fasta.write(str(seq) + '\n')
+
 
 
 class SpeciesCluster(SequenceCluster):
@@ -854,20 +863,23 @@ class TaxedFastaFile(FastaFile):
 
     @property
     def tax_obj_list(self) -> List[Taxonomy]:
-        return self.__get_seq_taxonomies()
+        return self.__get_seq_taxonomies(uniq=False)
 
-    def __get_seq_taxonomies(self) -> List[Taxonomy]:
+    @property
+    def tax_obj_set(self) -> Set[Taxonomy]:
+        return self.__get_seq_taxonomies(uniq=True)
+
+    def __get_seq_taxonomies(self, uniq=True) -> List[Taxonomy]:
         headers = self.get_seq_headers()
         # NOTE we might need to omit the check for tax as sequences without
         # taxnomoies are planned to be written to output file untouched
         taxonomies = []
         for header in headers:
             tax = header.taxonomy
-            # if not tax:
-            #     logging.warning("Taxonomy is not available for %s", header.seq_id)
             taxonomies.append(tax)
-
-        return list(set(taxonomies))
+        if uniq:
+            return set(taxonomies)
+        return taxonomies
 
     def filter_seq_by_tax(self, taxonomy: Taxonomy) -> List[Sequence]:
         sequences = []
@@ -925,12 +937,11 @@ class TaxedFastaFile(FastaFile):
         :param level: The taxonomy level up to which the taxonomy is needed.
         :param only_knowns: If True, only known taxonomies will be returned.
         """
-        taxs = self.tax_obj_list
+        taxs = self.tax_obj_set
         tax_list = []
         for tax in taxs:
             if tax.last_known_level == level:
                 tax_list.append(tax)
-        tax_list = list(set(tax_list))
         sorted(tax_list, key=lambda x: x.tax_str)
         return tax_list
 
@@ -962,7 +973,7 @@ class TaxedFastaFile(FastaFile):
 
         :return: List[Tuple[str, str]]
         """
-        taxs = self.tax_obj_list
+        taxs = self.tax_obj_set
         map_list = []
         for tax in taxs:
             if tax.is_known_upto(child_level):
@@ -982,7 +993,7 @@ class TaxedFastaFile(FastaFile):
 
         :return: List[Sequence]
         """
-        taxs = self.tax_obj_list
+        taxs = self.tax_obj_set
         seqs = []
         for tax in taxs:
             if tax.get_level(level) == value:
@@ -1133,7 +1144,8 @@ class TICUClust:
         run_dir.mkdir(parents=True, exist_ok=True)
         sequence_cluster = SequenceCluster(sequences, force_homogeneity=False)
         # sequences with length below 32 will be discarded by vsearch
-        logging.warning("Vsearch will discard sequences with length below 32.")
+        if sequence_cluster.min_len < 32:
+            logging.warning("Vsearch will discard sequences shorter than 32 nt.")
         input_fasta_path = run_dir.joinpath("input.fasta").absolute()
         sequence_cluster.write_to_fasta(input_fasta_path)
         sorted_seq_file = self.sort_seqs(str(input_fasta_path), by="length")

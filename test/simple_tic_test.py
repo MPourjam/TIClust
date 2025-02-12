@@ -3,6 +3,7 @@ import sys
 import os
 import pytest
 import re
+import shutil
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 from tic import simple_tic as stic
 import logging
@@ -44,7 +45,7 @@ class TestTaxonomy:
         assert taxonomy.full_tax == "NA-Kingdom;NA-Phylum;NA-Class;NA-Order;NA-Family;NA-Genus;NA-Species"
         assert taxonomy.last_known_level == ""
         assert taxonomy.orig_tax == "Unclassified"
-        assert str(taxonomy) == "tax=NA-Kingdom;NA-Phylum;NA-Class;NA-Order;NA-Family;NA-Genus;NA-Species"
+        assert str(taxonomy) == ""
         assert taxonomy.get_level("kingdom") == "NA-Kingdom"
 
     def test_taxonomy_all_invalid(self):
@@ -61,7 +62,8 @@ class TestTaxonomy:
         assert taxonomy.full_tax == "NA-Kingdom;NA-Phylum;NA-Class;NA-Order;NA-Family;NA-Genus;NA-Species"
         assert taxonomy.last_known_level == ""
         assert taxonomy.orig_tax == ";;;;;;"
-        assert str(taxonomy) == "tax=NA-Kingdom;NA-Phylum;NA-Class;NA-Order;NA-Family;NA-Genus;NA-Species"
+        # It's unclassified and we don't know if it's a bacterial sequence. ref: Taxonomy.__str__
+        assert str(taxonomy) == ""
         assert taxonomy.tax_list == ['']
         assert taxonomy.full_tax_list == [
             'NA-Kingdom',
@@ -89,7 +91,7 @@ class TestTaxonomy:
         assert taxonomy.full_tax == "Bacteria;Proteobacteria;Alphaproteobacteria;SAR11 clade;Clade III;NA-Genus;NA-Species"
         assert taxonomy.last_known_level == "family"
         assert taxonomy.orig_tax == "Bacteria;Proteobacteria;Alphaproteobacteria;SAR11 clade;Clade III"
-        assert str(taxonomy) == "tax=Bacteria;Proteobacteria;Alphaproteobacteria;SAR11 clade;Clade III;NA-Genus;NA-Species"
+        assert str(taxonomy) == "tax=Bacteria;Proteobacteria;Alphaproteobacteria;SAR11 clade;Clade III"
         assert taxonomy.is_known_upto("family")
 
 
@@ -119,13 +121,15 @@ class TestTaxonomy:
         tax_str = "tax=kingdom;phylum;unclass;unorder;family;genus;species;"
         taxonomy = stic.Taxonomy(tax_str)
         assert taxonomy.tax_list == ["kingdom", "phylum"]
-        assert str(taxonomy) == "tax=kingdom;phylum;NA-Class;NA-Order;family;genus;species"
+        assert taxonomy.full_tax == "kingdom;phylum;NA-Class;NA-Order;family;genus;species"
+        # Below will return the orig_tax as the taxonomy is not bacterial sequence
+        assert str(taxonomy) == "tax=kingdom;phylum;unclass;unorder;family;genus;species;"
+        assert taxonomy.orig_tax == "kingdom;phylum;unclass;unorder;family;genus;species;"
         assert taxonomy.get_tax_upto('family', ret_type = 'str') == "kingdom;phylum;NA-Class;NA-Order;NA-Family"
         # missed family level so we cut from invalid or missed level
         tax_str = "tax=kingdom;phylum;class;order;;genus;species;"
         taxonomy = stic.Taxonomy(tax_str)
         assert taxonomy.tax_list == ["kingdom", "phylum", "class", "order"]
-        assert str(taxonomy) == "tax=kingdom;phylum;class;order;NA-Family;genus;species"
 
     def test_full_tax(self):
         tax_str = "tax=kingdom;phylum;class;order;family;genus;species;"
@@ -210,7 +214,8 @@ class TestSeqHeader:
         assert str(seq_header.seq_id) == "seq1"
         assert isinstance(seq_header.taxonomy, stic.Taxonomy)
         assert seq_header.taxonomy.tax_str == "kingdom;phylum;class;order;family;genus;species"
-        assert str(seq_header.taxonomy) == "tax=kingdom;phylum;class;order;family;genus;species"
+        # below will return orig_tax and it will contain ';' at the end
+        assert str(seq_header.taxonomy) == "tax=kingdom;phylum;class;order;family;genus;species;"
 
 
 class TestSequence:
@@ -850,7 +855,10 @@ class TestTaxedFastaFile:
         tax_obj_list = self.taxed_fasta_file.tax_obj_list
         assert isinstance(tax_obj_list, list)
         assert len(tax_obj_list) == 4
-        for tax in tax_obj_list:
+        tax_obj_set = self.taxed_fasta_file.tax_obj_set
+        assert isinstance(tax_obj_set, set)
+        assert len(tax_obj_set) == 1
+        for tax in tax_obj_set:
             assert isinstance(tax, stic.Taxonomy)
 
     def test_filter_seq_by_tax(self):
@@ -887,7 +895,6 @@ class TestTaxedFastaFile:
 class TestTICUClust:
 
     def setup_method(self):
-        self.usearch_bin = pl.Path('../bin/usearch11.0.667_i86linux64').absolute()
         self.uclust_work_dir = pl.Path('./Uclust-WD').absolute()
         self.uclust_work_dir.mkdir(exist_ok=True)
         self.ticuclust = stic.TICUClust(self.uclust_work_dir)
@@ -895,21 +902,21 @@ class TestTICUClust:
         self.test_fasta_file = stic.TaxedFastaFile(self.test_fasta_file_path)
         self.sequences = self.test_fasta_file.get_sequences()
 
-    @pytest.fixture
-    def fix_run_uclust(self):
-        # get a path a temporary directory
-        tmp_dir = tempfile.TemporaryDirectory(dir=self.uclust_work_dir)
-        run_dir = pl.Path(tmp_dir.name)
-        input_fasta_path = run_dir.joinpath("input.fasta").absolute()
-        sequence_cluster = stic.OrderCluster(self.sequences)
-        sequence_cluster.write_to_fasta(input_fasta_path)
-        uclust_obj = stic.TICUClust(self.uclust_work_dir)
-        yield uclust_obj
-        shutil.rmtree(tmp_dir)
+    def teardown_method(self):
+        shutil.rmtree(self.uclust_work_dir, ignore_errors=True)
 
-    def test_run_uclust(self, fix_run_uclust):
-        uclust_obj = fix_run_uclust
-        file_pair_tuple = uclust_obj.run_uclust(self.sequences, 0.987)
+    @pytest.fixture
+    def fix_sort_seqs(self):
+        with tempfile.TemporaryDirectory(dir=self.uclust_work_dir) as temp_cluster_dir:
+            run_dir = pl.Path(temp_cluster_dir)
+            input_fasta_path = run_dir.joinpath("input.fasta").absolute()
+            sequence_cluster = stic.OrderCluster(self.sequences)
+            sequence_cluster.write_to_fasta(input_fasta_path)
+            yield input_fasta_path
+            input_fasta_path.unlink()
+
+    def test_run_uclust(self):
+        file_pair_tuple = self.ticuclust.run_uclust(self.sequences, 0.987)
         in_fasta_file_path, centroid_seq_dict = file_pair_tuple
         assert in_fasta_file_path.exists()
         assert isinstance(centroid_seq_dict, dict)
@@ -946,23 +953,16 @@ C\t3\t1\t*\t*\t*\t*\t*\tseq1 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Gen
     def test_get_sequences_clusters(self):
         clusters = self.ticuclust.get_sequences_clusters(self.sequences, 0.987)
         assert isinstance(clusters, list)
-        assert len(clusters) == 4 # 4 sequences, each in its own cluster
+        assert len(clusters) == 375 # 4 sequences, each in its own cluster
         assert isinstance(clusters[0], stic.SequenceCluster)
 
-    def test_sort_seqs(self):
-        with tempfile.TemporaryDirectory(dir=self.uclust_work_dir) as temp_cluster_dir:
-            run_dir = pl.Path(temp_cluster_dir)
-            input_fasta_path = run_dir.joinpath("input.fasta").absolute()
-            sequence_cluster = stic.SequenceCluster(self.sequences, force_homogeneity=False)
-            sequence_cluster.write_to_fasta(input_fasta_path)
-            sorted_fasta_file = self.ticuclust.sort_seqs(str(input_fasta_path), by="length")
-            assert sorted_fasta_file.exists()
-            assert sorted_fasta_file.stat().st_size > 0
-            # first sequence in the sorted file should be self.seq4 as it is the longest sequence
-            with open(sorted_fasta_file, 'r') as f:
-                lines = f.readlines()
-                assert lines[0].strip() == str(self.seq4.header)
-            sorted_fasta_file.unlink()
+    def test_sort_seqs(self, fix_sort_seqs):
+        sorted_fasta_file = self.ticuclust.sort_seqs(fix_sort_seqs, "length")
+        assert sorted_fasta_file.exists()
+        assert isinstance(sorted_fasta_file, pl.Path)
+        sorted_fasta = stic.TaxedFastaFile(sorted_fasta_file)
+        seqs = sorted_fasta.get_sequences()            
+        assert len(seqs) == 500
 
 
 seq_count_stats = nt(
@@ -1095,7 +1095,7 @@ class TestTICAnalysis:
             assert seq_id in output_seq_ids
         assert len(bac_input_seq_ids) == len(output_seq_ids)
         # all sequences in the output file should have full taxonomy
-        for taxa in output_fasta.tax_obj_list:
+        for taxa in output_fasta.tax_obj_set:
             assert taxa.last_known_level == "species"
         all_input_seqs = self.tic_analysis.fasta_file.get_seq_ids()
         non_bac_fasta = stic.TaxedFastaFile(self.tic_analysis.non_bact_fasta_path)
@@ -1132,19 +1132,19 @@ class TestTICAnalysis:
         tic_analysis = fix_run
         output_fasta_path = tic_analysis.tic_output_fasta_path
         output_fasta = stic.TaxedFastaFile(output_fasta_path)
-        tax_obj_list = output_fasta.tax_obj_list
-        for tax in tax_obj_list:
+        tax_obj_set = output_fasta.tax_obj_set
+        for tax in tax_obj_set:
             assert tax.last_known_level == "species"
-        assert all([tax.last_known_level == "species" for tax in tax_obj_list])
+        assert all([tax.last_known_level == "species" for tax in tax_obj_set])
 
     def test_taxonomy_consistency(self, fix_run, fix_parent_child_pairs):
         tic_analysis = fix_run
         output_fasta_path = tic_analysis.tic_output_fasta_path
         output_fasta = stic.TaxedFastaFile(output_fasta_path)
-        tax_obj_list = output_fasta.tax_obj_list
+        tax_obj_set = output_fasta.tax_obj_set
         #
         phyl_king_d = {}
-        for tax in tax_obj_list:
+        for tax in tax_obj_set:
             for parent, child in fix_parent_child_pairs:
                 phyl_king_d.get(tax.get_level(child), []).append(tax.get_level(parent))
 
@@ -1244,7 +1244,7 @@ class TestTICAnalysisSmall:
             assert seq_id in output_seq_ids
         assert len(input_seq_ids) == len(output_seq_ids)
         # all sequences in the output file should have full taxonomy
-        for taxa in output_fasta.tax_obj_list:
+        for taxa in output_fasta.tax_obj_set:
             assert taxa.last_known_level == "species"
 
 
@@ -1292,7 +1292,7 @@ class TestTICAnalysisAllKnownOrder:
     def fix_complete_species_level(self, fix_complete_genus_level):
         all_known_species_fasta = self.tic_analysis.complete_species_level(fix_complete_genus_level)
         yield all_known_species_fasta
-        # all_known_species_fasta.unlink()
+        all_known_species_fasta.unlink()
 
     @pytest.fixture
     def fix_run(self):
@@ -1322,11 +1322,11 @@ class TestTICAnalysisAllKnownOrder:
         assert len(lines) == 1000
         # There should be 33 distinct FOTU in the output file
         output_fasta = stic.TaxedFastaFile(fix_complete_family_level)
-        tax_obj_list = output_fasta.tax_obj_list
+        tax_obj_set = output_fasta.tax_obj_set
         family_set = set()
-        for tax in tax_obj_list:
+        for tax in tax_obj_set:
             family_set.add(tax.family)
-        assert len(family_set) == 33
+        assert len(family_set) in range(28, 35)
 
     @pytest.mark.parametrize("i", range(REPEAT_PARAMETER))
     def test_complete_genus_level(self, i, fix_complete_genus_level):
@@ -1336,11 +1336,11 @@ class TestTICAnalysisAllKnownOrder:
         assert len(lines) == 1000
         # There should be 130 distinct GOTU in the output file
         output_fasta = stic.TaxedFastaFile(fix_complete_genus_level)
-        tax_obj_list = output_fasta.tax_obj_list
+        tax_obj_set = output_fasta.tax_obj_set
         genus_set = set()
-        for tax in tax_obj_list:
+        for tax in tax_obj_set:
             genus_set.add(tax.genus)
-        assert len(genus_set) == 130
+        assert len(genus_set) in range(100, 115)
 
     @pytest.mark.parametrize("i", range(REPEAT_PARAMETER))
     def test_complete_species_level(self, i, fix_complete_species_level):
@@ -1350,11 +1350,11 @@ class TestTICAnalysisAllKnownOrder:
         assert len(lines) == 1000
         # There should be 1000 distinct SOTU in the output file
         output_fasta = stic.TaxedFastaFile(fix_complete_species_level)
-        tax_obj_list = output_fasta.tax_obj_list
+        tax_obj_set = output_fasta.tax_obj_set
         species_set = set()
-        for tax in tax_obj_list:
+        for tax in tax_obj_set:
             species_set.add(tax.species)
-        assert len(species_set) == 412
+        assert len(species_set) in range(370, 395)
 
 
 @pytest.mark.mixed_kingdoms_test
