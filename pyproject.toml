@@ -4,10 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tic"
-version = "0.2"
-description = "A description of your project"
+version = "1.0.0"
+description = "Taxonomy Informed Clustering (TIC) is a tool for clustering bacterial sequences based on their taxonomy and hypothetically complete taxonomy levels."
 authors = [
-    { name = "Your Name", email = "your.email@example.com" }
+    { name = "Mohsen Pourjam", email = "pourjam.cs@hotmial.com" },
+    { name = "Ilias Lagkouvardos", email = "ilias.lagkouvardos@gmail.com" }
 ]
 readme = "README.md"
 license = { text = "MIT" }
@@ -16,6 +17,10 @@ dependencies = [
     "requests",
     "toml",
 ]
+
+[project.urls]
+repository = "https://github.com/MPourjam/SimpleTIC"
+
 
 [project.urls]
 homepage = "https://example.com"
