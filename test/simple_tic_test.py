@@ -1386,5 +1386,68 @@ class TestTICAnalysisMixedKingdoms:
         assert len(lines) == 1314
 
 
+class TestZOTUTable:
+
+    def setup_method(self):
+        self.zotu_table_file_path = pl.Path("Mixed_kingdoms_1K_V3-V4_table.tab")
+        self.zotu_table = stic.ZOTUTable(self.zotu_table_file_path)
+
+    def teardown_method(self):
+        # self.zotu_table_file_path.unlink()
+        pass
+
+    def test_tax_col_ind(self):
+        assert self.zotu_table.tax_col_ind == -1
+
+    def test_zotus_ids(self):
+        zotus_ids = self.zotu_table.zotus_ids
+        assert isinstance(zotus_ids, list)
+        zotu_ids_from_file = []
+        with open(self.zotu_table_file_path, 'r') as f:
+            lines = f.readlines()
+            zotu_ids_from_file = [line.split("\t")[0] for line in lines[1:]]
+        assert len(zotus_ids) == len(lines) - 1
+        assert set(zotus_ids) == set(zotu_ids_from_file)
+
+    def test_sample_ids(self):
+        sample_ids = self.zotu_table.sample_ids
+        assert isinstance(sample_ids, list)
+        assert len(sample_ids) == 4
+        assert sample_ids == ["Sample1", "Sample2", "Sample3", "Sample4"]
+
+    def test_get_zotu_counts(self):
+        counts = self.zotu_table.get_zotu_counts("Zotu500") # middle
+        assert isinstance(counts, list)
+        assert counts == [12908, 4131, 16650, 20593]
+        counts = self.zotu_table.get_zotu_counts("Zotu1")  # first
+        assert isinstance(counts, list)
+        assert counts == [27, 27, 440, 374]
+        counts = self.zotu_table.get_zotu_counts("Zotu1405")  # last
+        assert isinstance(counts, list)
+        assert counts == [1365, 6049, 18906, 20860]
+
+    def test_get_zotu_tax(self):
+        tax = self.zotu_table.get_zotu_tax("Zotu1")
+        assert isinstance(tax, str)
+        assert tax == ""
+        tax = self.zotu_table.get_zotu_tax("Zotu500")
+        assert isinstance(tax, str)
+        assert tax == ""
+        tax = self.zotu_table.get_zotu_tax("Zotu1405")
+        assert isinstance(tax, str)
+        assert tax == ""
+
+    def test_collapse_zotu_groups(self):
+        zotu_group = ["Zotu1", "Zotu2", "Zotu3"]
+        centroid, group_counts, group_tax = self.zotu_table.collapse_zotu_groups(zotu_group)
+        assert centroid == "Zotu3"
+        sum_zotu1_2 = zip(self.zotu_table.get_zotu_counts("Zotu1"), self.zotu_table.get_zotu_counts("Zotu2"))
+        sum_zotu1_2 = [sum(x) for x in sum_zotu1_2]
+        sum_zotu1_2__3 = zip(sum_zotu1_2, self.zotu_table.get_zotu_counts("Zotu3"))
+        sum_zotu1_2__3 = [sum(x) for x in sum_zotu1_2__3]
+        assert group_counts == sum_zotu1_2__3
+        assert group_tax == ""
+
+
 if __name__ == '__main__':
     pytest.main()
