@@ -10,6 +10,7 @@ from os import cpu_count
 from collections import defaultdict, OrderedDict
 from typing import List, Dict, Set, Tuple, Optional, Union
 from concurrent.futures import ThreadPoolExecutor
+import pandas as pd
 from .tic_helper.utils import system_sub, onelinefasta
 from .tic_helper.config import tic_configs
 
@@ -154,7 +155,7 @@ class Taxonomy:
         delimiter = delimiter if delimiter else cls.delimiter
         clean_full_path = cls.hypo_full_tax_list.copy()
         tax_list_ = tax_str.split(delimiter)
-        for ind, curr_lev in enumerate(clean_full_path):
+        for ind, _ in enumerate(clean_full_path):
             valid_tax = True
             curr_tax = tax_list_[ind] if ind < len(tax_list_) else ''
             for invalid_tax in cls.invalid_tax_rgx:
@@ -1102,6 +1103,61 @@ class TaxononomyTree:
         return any(True for node in nodes if node.node_name == node_obj.node_name)
 
 
+class ZOTUTable:
+
+    def __init__(self, zotu_table_file: pl.Path, sep: str = '\t'):
+        self.zotu_table_file = pl.Path(zotu_table_file).resolve()
+        self.sep = sep
+        self.table_df = pd.read_csv(self.zotu_table_file, sep=sep, index_col=0)
+
+    @property
+    def tax_col_ind(self) -> int:
+        cols_list = list(self.table_df.columns)
+        for i, col in enumerate(cols_list):
+            if 'taxonomy' in col.lower():
+                return i
+        return -1
+
+    @property
+    def zotus_ids(self) -> List[str]:
+        return self.table_df.index.tolist()
+
+    @property
+    def sample_ids(self) -> List[str]:
+        columns = list(self.table_df.columns)
+        return columns[:self.tax_col_ind] if self.tax_col_ind > -1 else columns
+
+    def get_zotu_counts(self, otu_id: str) -> List[int]:
+        samples_ids = self.sample_ids
+        counts = self.table_df.loc[otu_id, samples_ids].tolist()
+        return counts
+
+    def get_zotu_tax(self, otu_id: str) -> str:
+        if self.tax_col_ind == -1:
+            return ''
+        otu_id_row_ind = self.table_df.index.get_loc(otu_id)
+        return self.table_df.iloc[otu_id_row_ind, self.tax_col_ind]
+
+    def collapse_zotu_groups(self, zotu_group: List[str]) -> Tuple[str, List[int], str]:
+        """
+        It combines the counts of the given zotus and returns the combined counts.
+        """
+        init_counts = [0 for _ in range(len(self.sample_ids))]
+        group_tax = ''
+        centroid = ''
+        centroid_counts = init_counts
+        group_counts = init_counts
+        for zotu in zotu_group:
+            otu_counts = self.get_zotu_counts(zotu)
+            is_centroid = sum(otu_counts) >= sum(centroid_counts)
+            group_counts = [sum(x) for x in zip(group_counts, otu_counts)]
+            if is_centroid:
+                group_tax = self.get_zotu_tax(zotu)
+                centroid = zotu
+                centroid_counts = otu_counts
+        return centroid, group_counts, group_tax
+
+
 class TICUClust:
     """
     Objects of this class will take zOTUs and cluster them using UClust.
@@ -1304,6 +1360,8 @@ class TICAnalysis:
     default_fotu_gotu_file_name = "Map-FOTU-GOTU.tab"
     default_gotu_sotu_file_name = "Map-GOTU-SOTU.tab"
     default_sotu_zotu_file_name = "Map-SOTU-ZOTU.tab"
+    default_sotu_table_file_name = "SOTUs-Table.tab"
+    default_sotu_fasta_file_name = "SOTUs-Seq.fasta"
     default_work_dir_name = "TIC-WD"
     default_uclust_work_dir_name = "Uclust-WD"
 
@@ -1314,6 +1372,15 @@ class TICAnalysis:
         taxed_fasta_file_path = pl.Path(taxed_fasta_file_path).resolve()
         self.fasta_file = TaxedFastaFile(taxed_fasta_file_path)
         self.zotu_table_file = pl.Path(zotu_table_file).resolve() if zotu_table_file else None
+        self.zotu_table: ZOTUTable = ZOTUTable(self.zotu_table_file) if zotu_table_file else None
+        if self.zotu_table:
+            # zotus in zotu_table and sequence IDs in fasta file should match
+            zotu_ids = set(self.zotu_table.zotus_ids)
+            fasta_ids = set(self.fasta_file.get_seq_ids())
+            if zotu_ids != fasta_ids:
+                raise ValueError(
+                    "ZOTU IDs in the zOTU table and sequence IDs in the fasta file do not match."
+                )
         self.tic_wd = self.fasta_file.fasta_file_path.parent / self.default_work_dir_name
         if self.tic_wd.exists():
             logging.warning(
@@ -1321,6 +1388,7 @@ class TICAnalysis:
             )
             shutil.rmtree(self.tic_wd)
         self.uclust_wd = self.tic_wd / self.default_uclust_work_dir_name
+
         # creating the directories
         self.tic_wd.mkdir(parents=True, exist_ok=True)
         self.uclust_wd.mkdir(parents=True, exist_ok=True)
@@ -1330,6 +1398,8 @@ class TICAnalysis:
         self.gotu_sotu_file_path = self.tic_wd / self.default_gotu_sotu_file_name
         self.sotu_zotu_file_path = self.tic_wd / self.default_sotu_zotu_file_name
         self.tic_output_fasta_path = self.tic_wd / self.default_output_fasta_name
+        self.sotu_file_path = self.tic_wd / self.default_sotu_table_file_name
+        self.sotu_fasta_path = self.tic_wd / self.default_sotu_fasta_file_name
         # creating the lists
         self.fotu_gotu_list: List[Tuple[str, str]] = []
         self.gotu_sotu_list: List[Tuple[str, str]] = []
@@ -1363,7 +1433,10 @@ class TICAnalysis:
         # completing maps
         self.write_fotu_gotu_map_to_file(all_known_genus_fasta_path)
         self.write_gotu_sotu_map_to_file(all_known_species_fasta_path)
-        self.write_sotu_zotu_map_to_file(all_known_species_fasta_path)
+        # writing the sotu table to file. Also SOTU to ZOTU map
+        self.deflate_zotu_table(all_known_species_fasta_path)
+        # writing the sotu fasta to file
+        self.extract_sotu_fasta_file(all_known_species_fasta_path)
         # writing non-bacteria sequences to the output fasta
         self.append_non_bacteria_seqs(self.non_bact_fasta_path)
         # deleting the intermediate files
@@ -1671,16 +1744,22 @@ class TICAnalysis:
 
     @staticmethod
     def get_sotu_zotu_map(taxed_fasta_path: pl.Path) -> List[Tuple[str, str]]:
-        map_list = []
+        map_set = set()
         with open(taxed_fasta_path, 'r', encoding='utf-8') as fasta:
             curr_line = fasta.readline().strip()
             while curr_line:
                 if curr_line.startswith('>'):
                     seq_header = SeqHeader(curr_line)
                     if seq_header.taxonomy.is_known_upto('species'):
-                        map_list.append((str(seq_header.taxonomy.species), str(seq_header.seq_id)))
+                        map_set.add((str(seq_header.taxonomy.species), str(seq_header.seq_id)))
+                    else:
+                        logging.warning(
+                            "Sequence %s is not known upto species level."\
+                            " It won't be included in SOTU/ZOTU map.",
+                            str(seq_header.seq_id)
+                        )
                 curr_line = fasta.readline().strip()
-
+        map_list = list(map_set)
         sorted(map_list, key=lambda x: x[0])
         return map_list
 
@@ -1697,6 +1776,110 @@ class TICAnalysis:
         with open(fasta_file_path, 'a', encoding='utf-8') as fasta:
             for seq in non_bacteria_seqs:
                 fasta.write(str(seq) + '\n')
+
+    @staticmethod
+    def generate_id(input_str: str, prefix: str) -> str:
+        """
+        It generates a unique id for the given string.
+        """
+        hash_ = [int(el) for el in list(str(bin(hash(input_str))))[2::6]]
+        return prefix + ''.join(sum(hash_))
+
+    def __species_zotus_pair_to_dict(self, sotu_zotu_map_pairs: List[Tuple[str, str]]) -> dict:
+        sotu_to_zotu_map = {}
+        for sotu, zotu in sotu_zotu_map_pairs:
+            zotus = sotu_to_zotu_map.get(sotu, [])
+            zotus.append(zotu)
+            sotu = sotu if "SOTU" in sotu else self.generate_id(sotu, "SOTU0")
+            sotu_to_zotu_map[sotu] = zotus
+        return sotu_to_zotu_map
+
+    def get_sotu_table_lines(
+        self,
+        sotu_zotu_map: List[Tuple[str, str]],
+        known_species_fasta: pl.Path) -> Dict[str, Tuple[str, List[int], str]]:
+        """
+        It returns the lines of the SOTU table. Each line is a tuple of 
+         SOTU, (centroid ZOTU, counts, taxonomy)
+        """
+        if self.zotu_table is None:
+            logging.warning("ZOTU table is not provided. Skipping the SOTU table generation.")
+            return {}
+
+        known_species_fasta = pl.Path(known_species_fasta).resolve()
+        known_species_fasta = TaxedFastaFile(known_species_fasta)
+        sotu_to_zotu_map = self.__species_zotus_pair_to_dict(sotu_zotu_map)
+        sotu_to_line_map = {}
+        for sotu, zotus in sotu_to_zotu_map.items():
+            collapsed_zotu_line = self.zotu_table.collapse_zotu_groups(zotus)
+            sotu_to_line_map[sotu] = collapsed_zotu_line
+        new_sotu_to_line_map = {}
+        for sotu, (cent_z, counts, _) in sotu_to_line_map.items():
+            new_sotu_to_line_map[cent_z] = (
+                sotu,
+                counts,
+                known_species_fasta.get_seq_by_seq_id([cent_z])[0].header.taxonomy.tax_str
+            )
+        sotu_to_line_map = new_sotu_to_line_map
+        return sotu_to_line_map
+
+    def deflate_zotu_table(
+        self,
+        known_species_fasta: pl.Path) -> None:
+        """
+        It deflates the zOTU table to the SOTU table. SOTUs might be actual species or SOTUs
+        """
+        known_species_fasta = pl.Path(known_species_fasta).resolve()
+        if self.zotu_table is None or not known_species_fasta.is_file():
+            logging.warning(
+                "ZOTU table or known species fasta file is not provided. Skipping the deflation."
+            )
+            return
+
+        species_zotus_map: List[Tuple[str, str]] = self.get_sotu_zotu_map(known_species_fasta)
+        sotu_zotu_map = species_zotus_map
+        sotu_to_line_map = self.get_sotu_table_lines(sotu_zotu_map, known_species_fasta)
+        new_sotu_zotu_map = {
+            (sotu, cent_z) for sotu, (cent_z, _, _) in sotu_to_line_map.items()
+        }
+        with open(self.sotu_zotu_file_path, 'w', encoding='utf-8') as map_file_io:
+            map_file_io.write("SOTU\tZOTU\n")
+            for sotu, zotu in new_sotu_zotu_map:
+                map_file_io.write(f"{sotu}\t{zotu}\n")
+
+        sotu_df = pd.DataFrame(
+            columns= ["#SOTU"] + self.zotu_table.sample_ids + ["Taxonomy"]
+        )
+        for cent_z, (sotu, counts, tax) in sotu_to_line_map.items():
+            # write the line to the dataframe
+            sotu_df.loc[sotu] = [sotu] + counts + [tax]
+        if not sotu_df.empty:
+            sotu_df.to_csv(self.sotu_file_path, sep='\t')
+
+
+    def extract_sotu_fasta_file(
+        self,
+        known_species_fasta: pl.Path) -> None:
+        """
+        It extracts the sequences of the SOTUs from the source fasta file and
+         writes them to a new file.
+        """
+        seq_list = []
+        known_species_fasta = pl.Path(known_species_fasta).resolve()
+        known_species_fasta_obj = TaxedFastaFile(known_species_fasta)
+        species_zotus_map: List[Tuple[str, str]] = self.get_sotu_zotu_map(known_species_fasta)
+        sotu_zotu_map = species_zotus_map
+        sotu_to_line_map = self.get_sotu_table_lines(sotu_zotu_map, known_species_fasta)
+        for cent_z, (sotu, _, _) in sotu_to_line_map.items():
+            curr_seq = known_species_fasta_obj.get_seq_by_seq_id([cent_z])[0]
+            curr_seq.header.seq_id.id_str = sotu
+            seq_list.append(curr_seq)
+
+        self.fasta_file.write_to_fasta_file(
+            sequences=seq_list,
+            mode='w',
+            output_file_path=self.sotu_fasta_path
+            )
 
     @staticmethod
     def concat_nums(num_1: int, num_2: int) -> str:
