@@ -986,11 +986,21 @@ cluster_params = nt(
     ]
 )
 
+tic_init_files = nt(
+    "tic_init_files",
+    [
+        "input_fasta",
+        "zotu_table"
+    ]
+)
 
-INPUT_FASTAs = [
-    "Minor_pseudo_sequences.fasta",
-    "All_known_order_500_sequences.fasta",
-    "Mixed_kingdoms_1K_V3-V4_sequences.fasta"
+TIC_INIT_FILES = [
+    tic_init_files("Minor_pseudo_sequences.fasta", None),
+    tic_init_files("All_known_order_500_sequences.fasta", None),
+    tic_init_files(
+        "Mixed_kingdoms_1K_V3-V4_sequences.fasta",
+        "Mixed_kingdoms_1K_V3-V4_table.tab"
+    )
 ]
 
 CLUSTER_THRESHOLDS = [
@@ -1014,8 +1024,8 @@ CLUSTER_THRESHOLDS = [
 
 class TestTICAnalysis:
 
-    @pytest.fixture(params=INPUT_FASTAs)
-    def in_fasta(self, request):
+    @pytest.fixture(params=TIC_INIT_FILES)
+    def fix_init_files(self, request):
         return request.param
 
     @pytest.fixture(params=CLUSTER_THRESHOLDS)
@@ -1023,9 +1033,10 @@ class TestTICAnalysis:
         return request.param
 
     @pytest.fixture(autouse=True)
-    def setup_method(self, in_fasta, thresholds):
-        self.fasta_file_path = pl.Path(in_fasta).resolve()
-        self.tic_analysis = stic.TICAnalysis(self.fasta_file_path)
+    def setup_method(self, fix_init_files, thresholds):
+        self.fasta_file_path = pl.Path(fix_init_files.input_fasta).resolve()
+        self.zotu_table_path = fix_init_files.zotu_table if fix_init_files.zotu_table else None
+        self.tic_analysis = stic.TICAnalysis(self.fasta_file_path, self.zotu_table_path)
         self.tic_analysis.run(
             cluster_thresholds_d = {
                 "family": thresholds.fam_thr,
@@ -1035,7 +1046,8 @@ class TestTICAnalysis:
         )
 
     def teardown_method(self):
-        self.tic_analysis.cleanup(full=True)
+        # self.tic_analysis.cleanup(full=True)
+        pass
 
     @pytest.fixture
     def fix_parent_child_pairs(self):
@@ -1120,7 +1132,30 @@ class TestTICAnalysis:
                 logging.warning(f"Taxonomy {child} has multiple parents: {parents}")
         assert all([len(parents) == 1 for parents in phyl_king_d.values()])
 
-    # TODO merge following two test classes into this class. Use stats INPUT_FASTAs to check the results cluster counts.
+    def test_deflate_zotu_table(self):
+        if self.tic_analysis.zotu_table is None:
+            assert self.tic_analysis.deflate_zotu_table(self.tic_analysis.tic_output_fasta_path) is None
+        else:
+            self.tic_analysis.deflate_zotu_table(self.tic_analysis.tic_output_fasta_path)
+            assert self.tic_analysis.sotu_table_path.exists()
+            sotu_table = stic.ZOTUTable(self.tic_analysis.sotu_table_path)
+            tic_sotu_output_fasta = stic.TaxedFastaFile(self.tic_analysis.sotu_fasta_path)
+            output_sotu_seq_ids = tic_sotu_output_fasta.get_seq_ids()
+            tic_zotu_output = stic.TaxedFastaFile(self.tic_analysis.tic_output_fasta_path)
+            tic_out_zotus_ids = tic_zotu_output.get_seq_ids()
+            assert len(output_sotu_seq_ids) == sotu_table.table_df.shape[0]
+            assert set(output_sotu_seq_ids) == set(sotu_table.table_df.index)
+            tic_output_zotus_count = self.tic_analysis.zotu_table.total_count(tic_out_zotus_ids)
+            sotus_tot_count = sotu_table.total_count()
+            init_zotu_table_count = self.tic_analysis.zotu_table.total_count()
+            assert init_zotu_table_count == 52871687
+            assert tic_output_zotus_count == sotus_tot_count
+            # non bacterial zotu count + bacterial zotu count = total zotu count
+            non_bac_seq_ids = stic.TaxedFastaFile(self.tic_analysis.non_bact_fasta_path).get_seq_ids()
+            non_bac_zotus_count = self.tic_analysis.zotu_table.total_count(non_bac_seq_ids)
+            assert non_bac_zotus_count + tic_output_zotus_count == init_zotu_table_count
+
+    # TODO merge following two test classes into this class. Use stats TIC_INIT_FILES to check the results cluster counts.
 
 
 @pytest.mark.minor_test
