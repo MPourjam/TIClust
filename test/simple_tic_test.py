@@ -1024,19 +1024,21 @@ CLUSTER_THRESHOLDS = [
 
 class TestTICAnalysis:
 
-    @pytest.fixture(params=TIC_INIT_FILES)
+    @pytest.fixture(scope='class', params=TIC_INIT_FILES)
     def fix_init_files(self, request):
         return request.param
 
-    @pytest.fixture(params=CLUSTER_THRESHOLDS)
+    @pytest.fixture(scope='class', params=CLUSTER_THRESHOLDS)
     def thresholds(self, request):
         return request.param
 
-    @pytest.fixture(autouse=True)
-    def setup_method(self, fix_init_files, thresholds):
+    @classmethod
+    @pytest.fixture(scope='class', autouse=True)
+    def setup_class(self, request, fix_init_files, thresholds):
         self.fasta_file_path = pl.Path(fix_init_files.input_fasta).resolve()
         self.zotu_table_path = fix_init_files.zotu_table if fix_init_files.zotu_table else None
         self.tic_analysis = stic.TICAnalysis(self.fasta_file_path, self.zotu_table_path)
+        request.cls.tic_analysis = self.tic_analysis
         self.tic_analysis.run(
             cluster_thresholds_d = {
                 "family": thresholds.fam_thr,
@@ -1045,11 +1047,10 @@ class TestTICAnalysis:
             }
         )
 
-    def teardown_method(self):
-        # self.tic_analysis.cleanup(full=True)
-        pass
+    def teardown_class(self):
+        self.tic_analysis.cleanup(full=True)
 
-    @pytest.fixture
+    @pytest.fixture(scope='class')
     def fix_parent_child_pairs(self):
         tax_levels = stic.Taxonomy.level_tax_map
         parent_child_pairs = []
