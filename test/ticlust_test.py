@@ -13,7 +13,7 @@ import pathlib as pl
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
+TEST_DIR = pl.Path(__file__).resolve().parent
 
 class TestTaxonomy:
 
@@ -895,10 +895,10 @@ class TestTaxedFastaFile:
 class TestTICUClust:
 
     def setup_method(self):
-        self.uclust_work_dir = pl.Path('./Uclust-WD').absolute()
+        self.uclust_work_dir = TEST_DIR / 'Uclust-WD'
         self.uclust_work_dir.mkdir(exist_ok=True)
         self.ticuclust = stic.TICUClust(self.uclust_work_dir)
-        self.test_fasta_file_path = pl.Path("All_known_order_500_sequences.fasta")
+        self.test_fasta_file_path = TEST_DIR / "All_known_order_500_sequences.fasta"
         self.test_fasta_file = stic.TaxedFastaFile(self.test_fasta_file_path)
         self.sequences = self.test_fasta_file.get_sequences()
 
@@ -993,8 +993,6 @@ tic_init_files = nt(
         "zotu_table"
     ]
 )
-
-TEST_DIR = pl.Path(__file__).resolve().parent
 
 TIC_INIT_FILES = [
     tic_init_files(
