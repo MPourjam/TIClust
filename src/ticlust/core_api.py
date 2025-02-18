@@ -8,7 +8,8 @@ def parse_arguments():
     parser.add_argument(
         "-f",
         "--fasta-file",
-        help="Fasta file with taxonomies starting with 'tax='"
+        help="Fasta file with taxonomies starting with 'tax='",
+        required=True
     )
     parser.add_argument(
         "-z",
