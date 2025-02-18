@@ -3,7 +3,7 @@ requires = ["setuptools>=42", "wheel", "requests"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tic"
+name = "ticlust"
 version = "1.0.0"
 description = "Taxonomy Informed Clustering (TIC) is a tool for clustering bacterial sequences based on their taxonomy and hypothetically complete taxonomy levels."
 authors = [
@@ -19,11 +19,11 @@ dependencies = [
 ]
 
 [project.urls]
-repository = "https://github.com/MPourjam/SimpleTIC"
+repository = "https://github.com/MPourjam/TIClust"
 
 
 [project.scripts]
-simpletic = "tic.cli:main"
+ticlust = "tic.cli:main"
 
 [tool.setuptools]
 packages = { find = { where = ["src"] } }

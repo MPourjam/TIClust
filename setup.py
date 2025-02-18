@@ -8,14 +8,13 @@ from install_hooks import CustomInstall
 
 
 setup(
-    name="tic",
+    name="ticlust",
     version="1.0.0",
     description="Taxonomy Informed Clustering (TIC) is a tool for clustering bacterial sequences based on their taxonomy and hypothetically complete taxonomy levels.",
     author="Mohsen Pourjam, Ilias Lagkouvardos",
     author_email="pourjam.cs@hotmial.com, ilias.lagkouvardos@gmail.com",
-    # url="https://example.com",
     project_urls={
-        "Repository": "https://github.com/yourusername/yourproject",
+        "Repository": "https://github.com/MPourjam/TIClust",
     },
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
@@ -32,7 +31,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "simpletic=tic.cli:main",
+            "ticlust=tic.cli:main",
         ],
     },
     cmdclass={
