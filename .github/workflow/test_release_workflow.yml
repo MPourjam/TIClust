@@ -1,6 +1,10 @@
 name: Publish ticlust to test pypi
 
-on: push
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
 
 jobs:
 
