@@ -994,12 +994,16 @@ tic_init_files = nt(
     ]
 )
 
+TEST_DIR = pl.Path(__file__).resolve().parent
+
 TIC_INIT_FILES = [
-    tic_init_files("Minor_pseudo_sequences.fasta", None),
-    tic_init_files("All_known_order_500_sequences.fasta", None),
     tic_init_files(
-        "Mixed_kingdoms_1K_V3-V4_sequences.fasta",
-        "Mixed_kingdoms_1K_V3-V4_table.tab"
+        TEST_DIR / "Minor_pseudo_sequences.fasta", None),
+    tic_init_files(
+        TEST_DIR / "All_known_order_500_sequences.fasta", None),
+    tic_init_files(
+        TEST_DIR / "Mixed_kingdoms_1K_V3-V4_sequences.fasta",
+        TEST_DIR / "Mixed_kingdoms_1K_V3-V4_table.tab"
     )
 ]
 
@@ -1163,7 +1167,7 @@ class TestTICAnalysis:
 class TestTICAnalysisSmall:
 
     def setup_method(self):
-        self.fasta_file_path = pl.Path(__file__).parent.joinpath("Minor_pseudo_sequences.fasta").resolve()
+        self.fasta_file_path = TEST_DIR / "Minor_pseudo_sequences.fasta"
         self.tic_analysis = stic.TICAnalysis(self.fasta_file_path)
 
     def teardown_method(self):
@@ -1256,7 +1260,7 @@ class TestTICAnalysisAllKnownOrder:
     REPEAT_PARAMETER = 1
 
     def setup_method(self):
-        self.fasta_file_path = pl.Path(__file__).parent.joinpath("All_known_order_500_sequences.fasta").resolve()
+        self.fasta_file_path = TEST_DIR / "All_known_order_500_sequences.fasta"
         self.tic_analysis = stic.TICAnalysis(self.fasta_file_path)
 
     def teardown_method(self):
@@ -1364,7 +1368,7 @@ class TestTICAnalysisAllKnownOrder:
 class TestTICAnalysisMixedKingdoms:
 
     def setup_method(self):
-        self.fasta_file_path = pl.Path(__file__).parent.joinpath("Mixed_kingdoms_1K_V3-V4_sequences.fasta").resolve()
+        self.fasta_file_path = TEST_DIR / "Mixed_kingdoms_1K_V3-V4_sequences.fasta"
         self.tic_analysis = stic.TICAnalysis(self.fasta_file_path)
 
     def teardown_method(self):
@@ -1425,7 +1429,7 @@ class TestTICAnalysisMixedKingdoms:
 class TestZOTUTable:
 
     def setup_method(self):
-        self.zotu_table_file_path = pl.Path("Mixed_kingdoms_1K_V3-V4_table.tab")
+        self.zotu_table_file_path = TEST_DIR / "Mixed_kingdoms_1K_V3-V4_table.tab"
         self.zotu_table = stic.ZOTUTable(self.zotu_table_file_path)
 
     def teardown_method(self):
