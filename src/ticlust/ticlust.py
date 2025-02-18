@@ -12,8 +12,8 @@ from collections import defaultdict, OrderedDict
 from typing import List, Dict, Set, Tuple, Optional, Union
 from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
-from .tic_helper.utils import system_sub, onelinefasta
-from .tic_helper.config import tic_configs
+from .ticlust_helper.utils import system_sub, onelinefasta
+from .ticlust_helper.config import tic_configs
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

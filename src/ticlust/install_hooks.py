@@ -1,5 +1,5 @@
 from setuptools.command.install import install
-from tic_helper.get_vsearch import get_vsearch_bin_path
+from ticlust_helper.get_vsearch import get_vsearch_bin_path
 from pathlib import Path
 import sys
 

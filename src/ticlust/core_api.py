@@ -13,7 +13,7 @@ def parse_arguments():
     parser.add_argument(
         "-z",
         "--zotu-table",
-        default=None,
+        default="",
         help="zOTUs table file path"
     )
     parser.add_argument(
@@ -42,8 +42,8 @@ def parse_arguments():
     )
     args = parser.parse_args()
     input_fasta_file = Path(args.fasta_file).resolve()
-    zotu_table = Path(args.zotu_table).resolve() if args.zotu_table else None
+    zotu_table = str(Path(args.zotu_table).resolve()) if args.zotu_table else None
     args.fasta_file = str(input_fasta_file)
-    args.zotu_table = str(zotu_table)
+    args.zotu_table = zotu_table
 
     return args

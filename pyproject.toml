@@ -14,8 +14,7 @@ readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.6"
 dependencies = [
-    "requests",
-    "toml",
+    "pandas",
 ]
 
 [project.urls]
@@ -23,13 +22,13 @@ repository = "https://github.com/MPourjam/TIClust"
 
 
 [project.scripts]
-ticlust = "tic.cli:main"
+ticlust = "ticlust.cli:main"
 
 [tool.setuptools]
 packages = { find = { where = ["src"] } }
 
 [tool.setuptools.package-data]
-"tic" = ["bin/vsearch"]
+"ticlust" = ["bin/vsearch"]
 
 [tool.setuptools.cmdclass]
-install = "tic.install_hooks.CustomInstall"
+install = "ticlust.install_hooks.CustomInstall"

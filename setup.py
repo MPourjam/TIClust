@@ -3,7 +3,7 @@ import requests
 import os
 import sys
 from pathlib import Path
-sys.path.append(str(Path(__file__).resolve().parent / 'src/tic'))
+sys.path.append(str(Path(__file__).resolve().parent / 'src/ticlust'))
 from install_hooks import CustomInstall
 
 
@@ -21,20 +21,19 @@ setup(
     license="MIT",
     python_requires=">=3.6",
     install_requires=[
-        "requests",
-        "toml",
+        "pandas",
     ],
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     package_data={
-        "tic": ["bin/vsearch"],
+        "ticlust": ["bin/vsearch"],
     },
     entry_points={
         "console_scripts": [
-            "ticlust=tic.cli:main",
+            "ticlust=ticlust.cli:main",
         ],
     },
     cmdclass={
-        "install": "tic.install_hooks.CustomInstall",
+        "install": "ticlust.install_hooks.CustomInstall",
     },
 )

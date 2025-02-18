@@ -5,7 +5,7 @@ import pytest
 import re
 import shutil
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
-from tic import simple_tic as stic
+from ticlust import ticlust as stic
 import logging
 import tempfile
 from collections import namedtuple as nt

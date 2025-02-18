@@ -1,4 +1,4 @@
-from .simple_tic import TICAnalysis
+from .ticlust import TICAnalysis
 from .core_api import parse_arguments
 
 
