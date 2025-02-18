@@ -20,7 +20,7 @@ jobs:
     - name: Install dependencies
       run: pip install pytest
     - name: Run tests
-      run: cd test; pytest ticlust_test.py
+      run: pytest -k 'TestTICAnalysis'
 
 
   build:  # Step 1
