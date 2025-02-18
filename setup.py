@@ -20,18 +20,10 @@ setup(
     long_description_content_type="text/markdown",
     license="MIT",
     python_requires=">=3.6",
-    install_requires=[
-        "pandas",
-    ],
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     package_data={
         "ticlust": ["bin/vsearch"],
-    },
-    entry_points={
-        "console_scripts": [
-            "ticlust=ticlust.cli:main",
-        ],
     },
     cmdclass={
         "install": "ticlust.install_hooks.CustomInstall",
