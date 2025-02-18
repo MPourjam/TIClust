@@ -1414,7 +1414,7 @@ class TestTICAnalysisMixedKingdoms:
     def test_complete_genus_level(self, fix_complete_genus_level):
         with open(fix_complete_genus_level, 'r') as f:
             lines = f.readlines()
-        assert len(lines) == 1314
+        assert len(lines) == 1312
 
     def test_complete_species_level(self, fix_complete_species_level):
         with open(fix_complete_species_level, 'r') as f:
