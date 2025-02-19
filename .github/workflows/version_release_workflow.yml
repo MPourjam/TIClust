@@ -68,6 +68,8 @@ jobs:
         path: dist/
     - name: Publish distribution 📦 to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        pypi-token: ${{ secrets.PYPI_TOKEN }}
 
 
   github-release:  # Flow 3
@@ -130,3 +132,4 @@ jobs:
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
         repository-url: https://test.pypi.org/legacy/
+        pypi-token: ${{ secrets.TESTPYPI_TOKEN }}
