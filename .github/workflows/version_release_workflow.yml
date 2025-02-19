@@ -5,13 +5,12 @@ on:
     tags:
       - 'v*.*.*'
 
-
 jobs:
 
   test: # Flow 0
     name: Test the distribution 📦
     runs-on: ubuntu-latest
-
+    environment: test-environment
     steps:
     - name: Checkout repository
       uses: actions/checkout@v2
@@ -29,6 +28,8 @@ jobs:
     name: Build distribution 📦
     runs-on: ubuntu-latest
     needs: test
+    environment: test-environment
+
     steps:
     - uses: actions/checkout@v2
       with:
@@ -52,13 +53,11 @@ jobs:
     name: >-
       Publish Python 🐍 distribution 📦 to PyPI
     if: >-
-      startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-beta.') && !contains(github.ref, '-rc.')
+      startsWith(github.ref, 'refs/tags/v') && github.ref == 'refs/heads/main' && !contains(github.ref, '-beta.') && !contains(github.ref, '-rc.')
     needs:
     - build
     runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/TIClust  # Replace <package-name> with your PyPI project name
+    environment: version-release  # this environment is checked by pypi before release
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
     steps:
@@ -77,6 +76,7 @@ jobs:
       and upload them to GitHub Release
     needs:
     - publish-to-pypi
+    environment: version-release
     runs-on: ubuntu-latest
     permissions:
       contents: write  # IMPORTANT: mandatory for making GitHub Releases
@@ -112,14 +112,12 @@ jobs:
         "$GITHUB_REF_NAME" dist/**
         --repo "$GITHUB_REPOSITORY"
   
-  publish-to-testpypi:  # FLow 4
+  publish-to-testpypi:  # Flow 4
     name: Publish Python 🐍 distribution 📦 to TestPyPI
     needs:
     - build
     runs-on: ubuntu-latest
-    environment:
-      name: testpypi
-      url: https://test.pypi.org/p/TIClust
+    environment: version-release
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
     steps:
