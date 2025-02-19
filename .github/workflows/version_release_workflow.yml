@@ -52,9 +52,9 @@ jobs:
     name: >-
       Publish Python 🐍 distribution 📦 to PyPI
     if: |
-      startsWith(toLowerCase(github.ref), 'refs/tags/v') && \
-      !contains(toLowerCase(github.ref), '-beta.') && \
-      !contains(toLowerCase(github.ref), '-rc.')
+      startsWith(github.ref, 'refs/tags/v') && \
+      !contains(github.ref, '-beta.') && \
+      !contains(github.ref, '-rc.')
     needs:
     - build
     runs-on: ubuntu-latest
