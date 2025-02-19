@@ -68,8 +68,9 @@ jobs:
         path: dist/
     - name: Publish distribution 📦 to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        pypi-token: ${{ secrets.PYPI_TOKEN }}
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
 
 
   github-release:  # Flow 3
@@ -130,6 +131,8 @@ jobs:
         path: dist/
     - name: Publish distribution 📦 to TestPyPI
       uses: pypa/gh-action-pypi-publish@release/v1
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.TESTPYPI_TOKEN }}
       with:
         repository-url: https://test.pypi.org/legacy/
-        pypi-token: ${{ secrets.TESTPYPI_TOKEN }}
