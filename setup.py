@@ -9,7 +9,7 @@ from install_hooks import CustomInstall
 
 setup(
     name="ticlust",
-    version="1.0.1",
+    version="1.0.2",
     description="Taxonomy Informed Clustering (TIC) is a tool for clustering bacterial sequences based on their taxonomy and hypothetically complete taxonomy levels.",
     author="Mohsen Pourjam, Ilias Lagkouvardos",
     author_email="pourjam.cs@hotmial.com, ilias.lagkouvardos@gmail.com",
