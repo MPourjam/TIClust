@@ -1,4 +1,4 @@
-# Version 1.0.3
+# Version 1.0.4
 
 - Arguments passed to CLI gets converts to expected type.
 

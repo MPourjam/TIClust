@@ -1,20 +1,9 @@
 import argparse
 from pathlib import Path
 from os import cpu_count
+from ticlust import __version__
 
-
-def get_version():
-    pyproject_file = Path(__file__).parent.parent.parent.joinpath('pyproject.toml').resolve()
-    with open(pyproject_file, 'r') as file:
-        for line in file:
-            if line.startswith("version"):
-                # Extract the version number
-                version = line.split('=')[1].strip().strip('"')
-                return version
-    raise RuntimeError("Unable to find version string in pyproject.toml.")
-
-
-VERSION = get_version()
+VERSION = __version__
 
 
 def parse_arguments():
