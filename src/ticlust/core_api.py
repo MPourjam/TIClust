@@ -54,7 +54,7 @@ def parse_arguments():
     input_fasta_file = Path(args.fasta_file).resolve()
     zotu_table = str(Path(args.zotu_table).resolve()) if args.zotu_table else None
     args.fasta_file = str(input_fasta_file)
-    args.zotu_table = str(zotu_table)
+    args.zotu_table = zotu_table  # None if not provided
     args.threads = int(args.threads)
     args.species_thr = float(args.species_thr)
     args.genera_thr = float(args.genera_thr)

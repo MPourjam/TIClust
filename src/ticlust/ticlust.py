@@ -1397,7 +1397,7 @@ class TICAnalysis:
         self.zotu_table_file = pl.Path(zotu_table_file).resolve() if zotu_table_file else None
         self.zotu_table: ZOTUTable = ZOTUTable(self.zotu_table_file) if zotu_table_file else None
         if self.zotu_table and not self.table_fasta_ids_match:
-            raise ValueError("Sequence IDs zOTU table and the fasta file do not match.")
+            raise ValueError("Sequence IDs in zOTU table and the fasta file do not match.")
         self.tic_wd = self.fasta_file.fasta_file_path.parent / self.default_work_dir_name
         if self.tic_wd.exists():
             logging.warning(
@@ -1937,12 +1937,14 @@ class TICAnalysis:
         return f"{num_1_str}0{num_2_str}"
 
     def __del__(self):
-        shutil.rmtree(self.uclust_wd, ignore_errors=True)
+        if hasattr(self, 'uclust_wd'):
+            shutil.rmtree(self.uclust_wd, ignore_errors=True)
 
     def cleanup(self, full: bool = False):
-        if full:
+        if full and hasattr(self, 'tic_wd'):
             shutil.rmtree(self.tic_wd, ignore_errors=True)
-        shutil.rmtree(self.uclust_wd, ignore_errors=True)
+        if hasattr(self, 'uclust_wd'):
+            shutil.rmtree(self.uclust_wd, ignore_errors=True)
 
     def __enter__(self):
         return self

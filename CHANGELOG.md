@@ -1,3 +1,8 @@
+# Version 1.0.5
+
+Minor bugs in CLI arguments resolved.
+On failure `uclust working directory | uclust_wd` gets deleted if existed.
+
 # Version 1.0.4
 
 - Arguments passed to CLI gets converts to expected type.
