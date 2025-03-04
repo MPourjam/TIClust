@@ -7,9 +7,20 @@ sys.path.append(str(Path(__file__).resolve().parent / 'src/ticlust'))
 from install_hooks import CustomInstall
 
 
+def get_version():
+    pyproject_file = Path(__file__).parent.joinpath('pyproject.toml').resolve()
+    with open(pyproject_file, 'r') as file:
+        for line in file:
+            if line.startswith("version"):
+                # Extract the version number
+                version = line.split('=')[1].strip().strip('"')
+                return version
+    raise RuntimeError("Unable to find version string in pyproject.toml.")
+
+
 setup(
     name="ticlust",
-    version="1.0.2",
+    version=get_version(),
     description="Taxonomy Informed Clustering (TIC) is a tool for clustering bacterial sequences based on their taxonomy and hypothetically complete taxonomy levels.",
     author="Mohsen Pourjam, Ilias Lagkouvardos",
     author_email="pourjam.cs@hotmial.com, ilias.lagkouvardos@gmail.com",

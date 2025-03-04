@@ -3,6 +3,20 @@ from pathlib import Path
 from os import cpu_count
 
 
+def get_version():
+    pyproject_file = Path(__file__).parent.parent.parent.joinpath('pyproject.toml').resolve()
+    with open(pyproject_file, 'r') as file:
+        for line in file:
+            if line.startswith("version"):
+                # Extract the version number
+                version = line.split('=')[1].strip().strip('"')
+                return version
+    raise RuntimeError("Unable to find version string in pyproject.toml.")
+
+
+VERSION = get_version()
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -41,10 +55,20 @@ def parse_arguments():
         default=int(cpu_count() * 0.75),
         help="Number of threads to use"
     )
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version=f"%(prog)s {VERSION}"
+    )
     args = parser.parse_args()
     input_fasta_file = Path(args.fasta_file).resolve()
     zotu_table = str(Path(args.zotu_table).resolve()) if args.zotu_table else None
     args.fasta_file = str(input_fasta_file)
-    args.zotu_table = zotu_table
+    args.zotu_table = str(zotu_table)
+    args.threads = int(args.threads)
+    args.species_thr = float(args.species_thr)
+    args.genera_thr = float(args.genera_thr)
+    args.family_thr = float(args.family_thr)
 
     return args

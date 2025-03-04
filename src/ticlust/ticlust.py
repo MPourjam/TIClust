@@ -1934,7 +1934,7 @@ class TICAnalysis:
         assert num_1 > 0 and num_2 > 0, "Both numbers should be non-negative!"
         num_1_str = str(num_1)
         num_2_str = str(num_2)
-        return f"{num_1_str}{num_2_str}"
+        return f"{num_1_str}0{num_2_str}"
 
     def __del__(self):
         shutil.rmtree(self.uclust_wd, ignore_errors=True)
