@@ -1,3 +1,8 @@
+# Version 1.0.6
+
+- TICAnalysis will take a logger object to replace with default logger.
+- Logger format changed to logg file and line of log origin
+
 # Version 1.0.5
 
 Minor bugs in CLI arguments resolved.
