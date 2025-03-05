@@ -1,19 +1,18 @@
-import unittest
 import sys
 import os
 import pytest
 import re
 import shutil
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
-from ticlust import ticlust as stic
-import logging
 import tempfile
 from collections import namedtuple as nt
 import pathlib as pl
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+from ticlust import ticlust as stic
+from ticlust.logger import ticlust_logger
 
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 TEST_DIR = pl.Path(__file__).resolve().parent
+
 
 class TestTaxonomy:
 
@@ -21,7 +20,7 @@ class TestTaxonomy:
         tax_str = "tax=kingdom;phylum;class;order;family;genus;species;"
         taxonomy = stic.Taxonomy(tax_str)
         # log tax_str
-        logging.info(taxonomy.tax_str)
+        ticlust_logger.info(taxonomy.tax_str)
         assert taxonomy.tax_str == "kingdom;phylum;class;order;family;genus;species"
         assert taxonomy.kingdom == "kingdom"
         assert taxonomy.phylum == "phylum"
@@ -30,7 +29,7 @@ class TestTaxonomy:
         assert taxonomy.family == "family"
         assert taxonomy.genus == "genus"
         assert taxonomy.species == "species"
-    
+
     def test_taxonomy_init_unclassifed(self):
         tax_str = "tax=Unclassified"
         taxonomy = stic.Taxonomy(tax_str)
@@ -75,8 +74,8 @@ class TestTaxonomy:
             'NA-Species'
         ]
         assert taxonomy == stic.Taxonomy("tax=Unclassified;;;;;")
-        assert bool(taxonomy) == False
-    
+        assert bool(taxonomy) is False
+
     def test_taxonomy_partial_invalid(self):
         tax_str = "tax=Bacteria;Proteobacteria;Alphaproteobacteria;SAR11 clade;Clade III"
         taxonomy = stic.Taxonomy(tax_str)
@@ -93,7 +92,6 @@ class TestTaxonomy:
         assert taxonomy.orig_tax == "Bacteria;Proteobacteria;Alphaproteobacteria;SAR11 clade;Clade III"
         assert str(taxonomy) == "tax=Bacteria;Proteobacteria;Alphaproteobacteria;SAR11 clade;Clade III"
         assert taxonomy.is_known_upto("family")
-
 
     def test_taxonomy_eukaryotic(self):
         tax_str = "tax=Eukaryota;Amorphea;Obazoa;Opisthokonta;"\
@@ -125,7 +123,7 @@ class TestTaxonomy:
         # Below will return the orig_tax as the taxonomy is not bacterial sequence
         assert str(taxonomy) == "tax=kingdom;phylum;unclass;unorder;family;genus;species;"
         assert taxonomy.orig_tax == "kingdom;phylum;unclass;unorder;family;genus;species;"
-        assert taxonomy.get_tax_upto('family', ret_type = 'str') == "kingdom;phylum;NA-Class;NA-Order;NA-Family"
+        assert taxonomy.get_tax_upto('family', ret_type='str') == "kingdom;phylum;NA-Class;NA-Order;NA-Family"
         # missed family level so we cut from invalid or missed level
         tax_str = "tax=kingdom;phylum;class;order;;genus;species;"
         taxonomy = stic.Taxonomy(tax_str)
@@ -186,7 +184,7 @@ class TestTaxonomy:
         assert taxonomy.tax_str == "kingdom;phylum;class;order;new_family"
         with pytest.raises(ValueError):
             taxonomy.set_level("ZOTU", "new_ZOTU")
-    
+
     def test_get_clean_taxonomy(self):
         tax_str = "tax=aBacteria;NA_phylum__aBacteria;NA_class__aBacteria;NA_order__aBacteria;"
         taxonomy = stic.Taxonomy(tax_str)
@@ -232,19 +230,19 @@ class TestSequence:
         sequence = "ATCGATCGATCG"
         seq = stic.Sequence(header, sequence)
         assert seq.is_sequence_correct()
-    
+
     def test_get_hash(self):
         header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
         sequence = "ATCGATCGATCG"
         seq = stic.Sequence(header, sequence)
         assert isinstance(seq.__hash__(), int)
         assert seq.__hash__() == hash(seq)
-    
+
     def test_get_tax_upto(self):
         header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
         sequence = "ATCGATCGATCG"
         seq = stic.Sequence(header, sequence)
-        assert seq.header.taxonomy.get_tax_upto('family', ret_type = "str") == "kingdom;phylum;class;order;family"
+        assert seq.header.taxonomy.get_tax_upto('family', ret_type="str") == "kingdom;phylum;class;order;family"
 
     def test_equal(self):
         header = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
@@ -294,7 +292,6 @@ class TestSequenceCluster:
             force_homogeneity=False
         )
         assert not non_homogenous_sequences.homogenous_tax_group
-
 
     def test_add_sequence(self):
         cluster = stic.SequenceCluster(self.sequences, centroid=self.seq1)
@@ -475,7 +472,7 @@ class TestPhylumCluster:
 
 
 class TestClassCluster:
-    
+
     def setup_method(self):
         self.header1 = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
         self.sequence1 = "ATCGATCGATCG"
@@ -529,7 +526,7 @@ class TestClassCluster:
 
 
 class TestOrderCluster:
-    
+
     def setup_method(self):
         self.header1 = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
         self.sequence1 = "ATCGATCGATCG"
@@ -587,7 +584,7 @@ class TestOrderCluster:
 
 
 class TestFamilyCluster:
-    
+
     def setup_method(self):
         self.header1 = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
         self.sequence1 = "ATCGATCGATCG"
@@ -645,7 +642,7 @@ class TestFamilyCluster:
 
 
 class TestGenusCluster:
-    
+
     def setup_method(self):
         self.header1 = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
         self.sequence1 = "ATCGATCGATCG"
@@ -703,7 +700,7 @@ class TestGenusCluster:
 
 
 class TestSpeciesCluster:
-    
+
     def setup_method(self):
         self.header1 = ">seq1 tax=kingdom;phylum;class;order;family;genus;species;"
         self.sequence1 = "ATCGATCGATCG"
@@ -942,7 +939,7 @@ C\t3\t1\t*\t*\t*\t*\t*\tseq1 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Gen
             uc_file_path = uc_file.name
         uc_dict = self.ticuclust.parse_uc_file(uc_file_path)
         assert isinstance(uc_dict, dict)
-        assert len(uc_dict) == 4 # 4 sequences and each is one cluster
+        assert len(uc_dict) == 4  # 4 sequences and each is one cluster
         assert list(uc_dict.values())[0][0] == ">seq4 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Genus;NA-Species"
         uc_dict = self.ticuclust.parse_uc_file(uc_file_path, cut_tax=True)
         assert isinstance(uc_dict, dict)
@@ -953,7 +950,7 @@ C\t3\t1\t*\t*\t*\t*\t*\tseq1 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Gen
     def test_get_sequences_clusters(self):
         clusters = self.ticuclust.get_sequences_clusters(self.sequences, 0.987)
         assert isinstance(clusters, list)
-        assert len(clusters) == 375 # 4 sequences, each in its own cluster
+        assert len(clusters) == 375  # 4 sequences, each in its own cluster
         assert isinstance(clusters[0], stic.SequenceCluster)
 
     def test_sort_seqs(self, fix_sort_seqs):
@@ -961,7 +958,7 @@ C\t3\t1\t*\t*\t*\t*\t*\tseq1 tax=kingdomA;phylumA;classA;orderA;NA-Family;NA-Gen
         assert sorted_fasta_file.exists()
         assert isinstance(sorted_fasta_file, pl.Path)
         sorted_fasta = stic.TaxedFastaFile(sorted_fasta_file)
-        seqs = sorted_fasta.get_sequences()            
+        seqs = sorted_fasta.get_sequences()
         assert len(seqs) == 500
 
 
@@ -1042,7 +1039,7 @@ class TestTICAnalysis:
         self.tic_analysis = stic.TICAnalysis(self.fasta_file_path, self.zotu_table_path)
         request.cls.tic_analysis = self.tic_analysis
         self.tic_analysis.run(
-            cluster_thresholds_d = {
+            cluster_thresholds_d={
                 "family": thresholds.fam_thr,
                 "genus": thresholds.gen_thr,
                 "species": thresholds.spe_thr
@@ -1063,8 +1060,6 @@ class TestTICAnalysis:
 
     def test_preserve_counts(self):
         output_fasta_path = self.tic_analysis.tic_output_fasta_path
-        with open(output_fasta_path, 'r') as f:
-            lines = f.readlines()
         # sequence ids of input and output fasta files should be the same
         output_fasta = stic.TaxedFastaFile(output_fasta_path)
         bac_input_seqs = [] + self.tic_analysis.filter_bac_seq_last_kown_at("kingdom", flatten=True)
@@ -1132,7 +1127,7 @@ class TestTICAnalysis:
 
         for child, parents in phyl_king_d.items():
             if len(parents) > 1:
-                logging.warning(f"Taxonomy {child} has multiple parents: {parents}")
+                ticlust_logger.warning(f"Taxonomy {child} has multiple parents: {parents}")
         assert all([len(parents) == 1 for parents in phyl_king_d.values()])
 
     def test_deflate_zotu_table(self):
@@ -1170,7 +1165,7 @@ class TestTICAnalysisSmall:
 
     def teardown_method(self):
         self.tic_analysis.cleanup(full=True)
-    
+
     @pytest.mark.parametrize("level", ["phylum", "class", "order", "family", "genus", "species"])
     def test_filter_tax_set_at_last_known_level(self, level):
         taxonomies = self.tic_analysis.filter_tax_set_at_last_known_level(level)
@@ -1321,7 +1316,7 @@ class TestTICAnalysisAllKnownOrder:
 
     @pytest.mark.parametrize("i", range(REPEAT_PARAMETER))
     def test_complete_family_level(self, i, fix_complete_family_level):
-        logging.info(f"Attempt {i + 1} of complete_family_level")
+        ticlust_logger.info(f"Attempt {i + 1} of complete_family_level")
         with open(fix_complete_family_level, 'r') as f:
             lines = f.readlines()
         assert len(lines) == 1000
@@ -1335,7 +1330,7 @@ class TestTICAnalysisAllKnownOrder:
 
     @pytest.mark.parametrize("i", range(REPEAT_PARAMETER))
     def test_complete_genus_level(self, i, fix_complete_genus_level):
-        logging.info(f"Attempt {i + 1} of complete_genus_level")
+        ticlust_logger.info(f"Attempt {i + 1} of complete_genus_level")
         with open(fix_complete_genus_level, 'r') as f:
             lines = f.readlines()
         assert len(lines) == 1000
@@ -1349,7 +1344,7 @@ class TestTICAnalysisAllKnownOrder:
 
     @pytest.mark.parametrize("i", range(REPEAT_PARAMETER))
     def test_complete_species_level(self, i, fix_complete_species_level):
-        logging.info(f"Attempt {i + 1} of complete_species_level")
+        ticlust_logger.info(f"Attempt {i + 1} of complete_species_level")
         with open(fix_complete_species_level, 'r') as f:
             lines = f.readlines()
         assert len(lines) == 1000
@@ -1399,7 +1394,7 @@ class TestTICAnalysisMixedKingdoms:
 
     @pytest.fixture
     def fix_run(self):
-        output_fasta_path = self.tic_analysis.run()
+        _ = self.tic_analysis.run()
         yield self.tic_analysis
         self.tic_analysis.cleanup(full=True)
 
@@ -1454,7 +1449,7 @@ class TestZOTUTable:
         assert sample_ids == ["Sample1", "Sample2", "Sample3", "Sample4"]
 
     def test_get_zotu_counts(self):
-        counts = self.zotu_table.get_zotu_counts("Zotu500") # middle
+        counts = self.zotu_table.get_zotu_counts("Zotu500")  # middle
         assert isinstance(counts, list)
         assert counts == [12908, 4131, 16650, 20593]
         counts = self.zotu_table.get_zotu_counts("Zotu1")  # first

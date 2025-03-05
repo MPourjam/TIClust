@@ -4,19 +4,17 @@
 import re
 import tempfile
 import shutil
-import logging
 import pathlib as pl
 import hashlib
+from logging import Logger
 from os import cpu_count
+from .logger import ticlust_logger
 from collections import defaultdict, OrderedDict
 from typing import List, Dict, Set, Tuple, Optional, Union
 from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 from .ticlust_helper.utils import system_sub, onelinefasta
 from .ticlust_helper.config import tic_configs
-
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 class Taxonomy:
@@ -77,10 +75,10 @@ class Taxonomy:
         self.__full_tax: is the full taxonomy string with all levels and implicit NA-levels.
 
         NOTE: if a taxonomy has several invalid or missed levels between known levels, then
-        these taxonomies are considered as invalid. We assume if at any level a taxonomy is 
-        known, its parents should also be known. Thus a taxonomy like 
+        these taxonomies are considered as invalid. We assume if at any level a taxonomy is
+        known, its parents should also be known. Thus a taxonomy like
         tax=kingdom;phylum;unclass;unorder;;genus;species;
-        should be considered as invalid and only longest continuous known taxonomy should be 
+        should be considered as invalid and only longest continuous known taxonomy should be
         considered which is tax=kingdom;phylum;
         """
         self.delimiter = delimiter if delimiter else self.delimiter
@@ -107,7 +105,6 @@ class Taxonomy:
         tax_str_ = self.get_clean_taxonomy(full_tax, self.delimiter, force_full_path=False)
         self.__full_tax = full_tax_
         self.__tax_str = tax_str_
-
 
     @property
     def tax_str(self) -> str:
@@ -251,7 +248,7 @@ class Taxonomy:
         """
         tax_lv_ind = self.level_tax_map.index(level)
         sliced_tax = []
-        tax_range  = range(tax_lv_ind + 1)
+        tax_range = range(tax_lv_ind + 1)
         if not top_down:
             tax_range = range(-1, tax_lv_ind - self.complete_taxonomy_length - 1, -1)
         for lev in tax_range:
@@ -611,7 +608,6 @@ class SequenceCluster:
                 fasta.write(str(seq) + '\n')
 
 
-
 class SpeciesCluster(SequenceCluster):
 
     def __init__(self, sequences: List[Sequence], centroid: Sequence = None):
@@ -812,10 +808,10 @@ class FastaFile:
         return sequences
 
     def write_to_fasta_file(
-        self,
-        output_file_path: pl.Path = None,
-        sequences: List[Sequence] = None,
-        mode: str = 'w'):
+            self,
+            output_file_path: pl.Path = None,
+            sequences: List[Sequence] = None,
+            mode: str = 'w'):
         if not output_file_path:
             output_file_path = self.fasta_file_path
         with open(output_file_path, mode, encoding='utf-8') as fasta:
@@ -884,7 +880,7 @@ class TaxedFastaFile(FastaFile):
 
     def filter_seq_by_tax(self, taxonomy: Taxonomy) -> List[Sequence]:
         sequences = []
-        logging.debug("Filtering sequences by %s", taxonomy)
+        ticlust_logger.debug("Filtering sequences by %s", taxonomy)
         with open(self.fasta_file_path, 'r', encoding='utf-8') as fasta:
             curr_line = fasta.readline().strip()
             seq_str = ''
@@ -998,7 +994,7 @@ class TaxedFastaFile(FastaFile):
         seqs = []
         for tax in taxs:
             if tax.get_level(level) == value:
-                logging.debug("Checking %s", tax)
+                ticlust_logger.debug("Checking %s", tax)
                 seqs += self.filter_seq_by_tax(tax)
         return seqs
 
@@ -1055,6 +1051,7 @@ class TaxononomyTree:
 
     def _get_nodes(self) -> Set[TreeNode]:
         nodes = set()
+
         def get_nodes(node: TreeNode):
             nodes.add(node)
             for child in node.children:
@@ -1188,11 +1185,11 @@ class TICUClust:
     Objects of this class will take zOTUs and cluster them using UClust.
     """
     vsearch_bin = pl.Path(tic_configs["VSEARCH_BIN_PATH"]).resolve()
+
     def __init__(
             self,
             uclust_work_pd: pl.Path,
-            vsearch_bin: pl.Path = None
-            ):
+            vsearch_bin: pl.Path = None):
         if vsearch_bin is None:
             self.vsearch_bin = pl.Path(tic_configs["VSEARCH_BIN_PATH"]).resolve()
         else:
@@ -1218,14 +1215,14 @@ class TICUClust:
             The path to the input fasta file
         :return: str
         """
-         # create a temporary directory for UClust in the uclust_work_dir
+        # create a temporary directory for UClust in the uclust_work_dir
         with tempfile.TemporaryDirectory(dir=self.uclust_work_dir) as temp_cluster_dir:
             run_dir = pl.Path(temp_cluster_dir).absolute().resolve()
         run_dir.mkdir(parents=True, exist_ok=True)
         sequence_cluster = SequenceCluster(sequences, force_homogeneity=False)
         # sequences with length below 32 will be discarded by vsearch
         if sequence_cluster.min_len < 32:
-            logging.warning("Vsearch will discard sequences shorter than 32 nt.")
+            ticlust_logger.warning("Vsearch will discard sequences shorter than 32 nt.")
         input_fasta_path = run_dir.joinpath("input.fasta").absolute()
         sequence_cluster.write_to_fasta(input_fasta_path)
         sorted_seq_file = self.sort_seqs(str(input_fasta_path), by="length")
@@ -1389,9 +1386,13 @@ class TICAnalysis:
     default_uclust_work_dir_name = "Uclust-WD"
 
     def __init__(
-        self,
-        taxed_fasta_file_path: pl.Path,
-        zotu_table_file: pl.Path = None):
+            self,
+            taxed_fasta_file_path: pl.Path,
+            zotu_table_file: pl.Path = None,
+            logger_obj: Logger = None):
+        if isinstance(logger_obj, Logger):
+            global ticlust_logger
+            ticlust_logger = logger_obj
         taxed_fasta_file_path = pl.Path(taxed_fasta_file_path).resolve()
         self.fasta_file = TaxedFastaFile(taxed_fasta_file_path)
         self.zotu_table_file = pl.Path(zotu_table_file).resolve() if zotu_table_file else None
@@ -1400,7 +1401,7 @@ class TICAnalysis:
             raise ValueError("Sequence IDs in zOTU table and the fasta file do not match.")
         self.tic_wd = self.fasta_file.fasta_file_path.parent / self.default_work_dir_name
         if self.tic_wd.exists():
-            logging.warning(
+            ticlust_logger.warning(
                 "TIC work directory already exists. Running TIC overwrites it."
             )
             shutil.rmtree(self.tic_wd)
@@ -1436,12 +1437,12 @@ class TICAnalysis:
     def run(
             self,
             threads: int = int(cpu_count() * 0.75),
-            cluster_thresholds_d: Dict[str, float] = None
-            ) -> None:
+            cluster_thresholds_d: Dict[str, float] = None,
+            logger_obj: Logger = None) -> None:
         self.threads = threads
         if cluster_thresholds_d:
             self.cluster_thresholds.update(cluster_thresholds_d)
-        logging.debug("Running TIC with the following thresholds: %s", self.cluster_thresholds)
+        ticlust_logger.debug("Running TIC with the following thresholds: %s", self.cluster_thresholds)
         all_known_order_fasta_path = self.fill_upto_order()
         all_known_family_fasta_path = self.complete_family_level(all_known_order_fasta_path)
         all_known_genus_fasta_path = self.complete_genus_level(all_known_family_fasta_path)
@@ -1465,7 +1466,7 @@ class TICAnalysis:
         all_known_family_fasta_path.unlink()
         all_known_genus_fasta_path.unlink()
         # log the output fasta file path
-        logging.info("Output fasta wrote to %s", all_known_species_fasta_path)
+        ticlust_logger.info("Output fasta wrote to %s", all_known_species_fasta_path)
 
         shutil.rmtree(self.uclust_wd, ignore_errors=True)
         return all_known_species_fasta_path
@@ -1474,8 +1475,7 @@ class TICAnalysis:
             self,
             tax_to_complete: Taxonomy,
             input_fasta: pl.Path,
-            cluster_threshold: float = 0.987
-            ) -> List[SequenceCluster]:
+            cluster_threshold: float = 0.987) -> List[SequenceCluster]:
         input_fasta = TaxedFastaFile(pl.Path(input_fasta).absolute().resolve())
         uclust_obj = TICUClust(uclust_work_pd=self.uclust_wd)
         homo_level = tax_to_complete.last_known_level
@@ -1581,7 +1581,7 @@ class TICAnalysis:
     def complete_family_level(self, all_known_order_fasta_path: pl.Path) -> pl.Path:
         """
         It completes the taxonomy upto family level for the sequences known upto order level.
-        NOTE: All the sequences in the input fasta file should be known upto order level and 
+        NOTE: All the sequences in the input fasta file should be known upto order level and
         should be from 'Bacteria' kingdom
         """
         all_known_order_fasta = TaxedFastaFile(all_known_order_fasta_path)
@@ -1621,7 +1621,7 @@ class TICAnalysis:
             mode='a'
         )
 
-        logging.info("Completed family level for %s orders.", str(len(result_clusters)))
+        ticlust_logger.info("Completed family level for %s orders.", str(len(result_clusters)))
         # we append all originally known sequences upto family level to the output fasta
         last_known_families_from_input_fasta = self.filter_bac_seq_last_kown_at(
             'family',
@@ -1674,7 +1674,7 @@ class TICAnalysis:
                 all_known_genus_to_write += list(cluster)
         all_known_genus_fasta.write_to_fasta_file(sequences=all_known_genus_to_write, mode='a')
 
-        logging.info("Completed genus level for %s families.", str(len(result_clusters)))
+        ticlust_logger.info("Completed genus level for %s families.", str(len(result_clusters)))
         # we append all originally known sequences upto genus level to the output fasta
         last_known_genus_from_input_fasta = self.filter_bac_seq_last_kown_at('genus', flatten=True)
         all_known_genus_fasta.write_to_fasta_file(
@@ -1725,7 +1725,7 @@ class TICAnalysis:
                 all_known_speceis_to_write += list(cluster)
 
         all_known_species_fasta.write_to_fasta_file(sequences=all_known_speceis_to_write, mode='a')
-        logging.info("Completed species level for %s genera.", str(len(result_clusters)))
+        ticlust_logger.info("Completed species level for %s genera.", str(len(result_clusters)))
 
         # finally we append all the sequences known upto species level to the output fasta
         last_known_species_from_input_fasta = self.filter_bac_seq_last_kown_at(
@@ -1800,8 +1800,8 @@ class TICAnalysis:
                     if seq_header.taxonomy.is_known_upto('species'):
                         map_set.add((str(seq_header.taxonomy.species), str(seq_header.seq_id)))
                     else:
-                        logging.warning(
-                            "Sequence %s is not known upto species level."\
+                        ticlust_logger.warning(
+                            "Sequence %s is not known upto species level."
                             " It won't be included in SOTU/ZOTU map.",
                             str(seq_header.seq_id)
                         )
@@ -1817,7 +1817,7 @@ class TICAnalysis:
         non_bacteria_seqs += self.fasta_file.filter_seq_by_level_value('kingdom', 'Viruses')
         non_bacteria_seqs += self.fasta_file.filter_seq_by_level_value('kingdom', 'Viroids')
         non_bacteria_seqs += self.fasta_file.filter_seq_by_level_value('kingdom', 'NA-Kingdom')
-        logging.info(
+        ticlust_logger.info(
             "Appending %s non-bacteria sequences to the output fasta.", str(len(non_bacteria_seqs))
         )
         with open(fasta_file_path, 'a', encoding='utf-8') as fasta:
@@ -1849,15 +1849,15 @@ class TICAnalysis:
         return sotu_to_zotu_map
 
     def get_sotu_table_lines(
-        self,
-        sotu_zotu_map: List[Tuple[str, str]],
-        known_species_fasta: pl.Path) -> Dict[str, Tuple[str, List[int], str]]:
+            self,
+            sotu_zotu_map: List[Tuple[str, str]],
+            known_species_fasta: pl.Path) -> Dict[str, Tuple[str, List[int], str]]:
         """
-        It returns the lines of the SOTU table. Each line is a tuple of 
+        It returns the lines of the SOTU table. Each line is a tuple of
          SOTU, (centroid ZOTU, counts, taxonomy)
         """
         if self.zotu_table is None:
-            logging.warning("ZOTU table is not provided. Skipping the SOTU table generation.")
+            ticlust_logger.warning("ZOTU table is not provided. Skipping the SOTU table generation.")
             return {}
 
         known_species_fasta = pl.Path(known_species_fasta).resolve()
@@ -1878,14 +1878,14 @@ class TICAnalysis:
         return sotu_to_line_map
 
     def deflate_zotu_table(
-        self,
-        known_species_fasta: pl.Path) -> None:
+            self,
+            known_species_fasta: pl.Path) -> None:
         """
         It deflates the zOTU table to the SOTU table. SOTUs might be actual species or SOTUs
         """
         known_species_fasta = pl.Path(known_species_fasta).resolve()
         if self.zotu_table is None or not known_species_fasta.is_file():
-            logging.warning(
+            ticlust_logger.warning(
                 "ZOTU table or known species fasta file is not provided. Skipping the deflation."
             )
             return None
@@ -1894,7 +1894,7 @@ class TICAnalysis:
         sotu_zotu_map = species_zotus_map
         sotu_to_line_map = self.get_sotu_table_lines(sotu_zotu_map, known_species_fasta)
         sotu_df = pd.DataFrame(
-            columns= ["#SOTU"] + self.zotu_table.sample_ids + ["Taxonomy"]
+            columns=["#SOTU"] + self.zotu_table.sample_ids + ["Taxonomy"]
         )
         for _, (sotu, counts, tax) in sotu_to_line_map.items():
             # write the line to the dataframe
@@ -1902,11 +1902,11 @@ class TICAnalysis:
         if not sotu_df.empty:
             sotu_df.to_csv(self.sotu_table_path, sep='\t', index=False)
         else:
-            logging.warning("No SOTUs found. The SOTU table won't be generated.")
+            ticlust_logger.warning("No SOTUs found. The SOTU table won't be generated.")
 
     def extract_sotu_fasta_file(
-        self,
-        known_species_fasta: pl.Path) -> None:
+            self,
+            known_species_fasta: pl.Path) -> None:
         """
         It extracts the sequences of the SOTUs from the source fasta file and
          writes them to a new file.
@@ -1926,7 +1926,7 @@ class TICAnalysis:
             sequences=seq_list,
             mode='w',
             output_file_path=self.sotu_fasta_path
-            )
+        )
 
     @staticmethod
     def concat_nums(num_1: int, num_2: int) -> str:
@@ -1953,6 +1953,6 @@ class TICAnalysis:
     def __exit__(self, exc_type, exc_value, traceback) -> None:
         full_cleanup = False
         if exc_type is not None:
-            logging.error("An error occurred while running TIC. Error: %s", exc_value)
+            ticlust_logger.error("An error occurred while running TIC. Error: %s", exc_value)
             full_cleanup = True
         self.cleanup(full=full_cleanup)
