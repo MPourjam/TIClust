@@ -9,5 +9,8 @@ dependencies:
   - numpy
   - tqdm
   - pip
+  - pytest>=8.2.2
+  - pandas>=2.2.3
+  - pytest-xdist
   - pip:
       - joblib

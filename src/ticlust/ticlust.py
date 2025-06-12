@@ -77,10 +77,10 @@ class Taxonomy:
         self.__full_tax: is the full taxonomy string with all levels and implicit NA-levels.
 
         NOTE: if a taxonomy has several invalid or missed levels between known levels, then
-        these taxonomies are considered as invalid. We assume if at any level a taxonomy is 
-        known, its parents should also be known. Thus a taxonomy like 
+        these taxonomies are considered as invalid. We assume if at any level a taxonomy is
+        known, its parents should also be known. Thus a taxonomy like
         tax=kingdom;phylum;unclass;unorder;;genus;species;
-        should be considered as invalid and only longest continuous known taxonomy should be 
+        should be considered as invalid and only longest continuous known taxonomy should be
         considered which is tax=kingdom;phylum;
         """
         self.delimiter = delimiter if delimiter else self.delimiter
@@ -107,7 +107,6 @@ class Taxonomy:
         tax_str_ = self.get_clean_taxonomy(full_tax, self.delimiter, force_full_path=False)
         self.__full_tax = full_tax_
         self.__tax_str = tax_str_
-
 
     @property
     def tax_str(self) -> str:
@@ -251,7 +250,7 @@ class Taxonomy:
         """
         tax_lv_ind = self.level_tax_map.index(level)
         sliced_tax = []
-        tax_range  = range(tax_lv_ind + 1)
+        tax_range = range(tax_lv_ind + 1)
         if not top_down:
             tax_range = range(-1, tax_lv_ind - self.complete_taxonomy_length - 1, -1)
         for lev in tax_range:
@@ -345,6 +344,9 @@ class SeqID:
 
     def __eq__(self, other):
         return str(self.id_str) == str(other)
+
+    def __hash__(self):
+        return hash(self.id_str)
 
 
 class SeqHeader:
@@ -611,7 +613,6 @@ class SequenceCluster:
                 fasta.write(str(seq) + '\n')
 
 
-
 class SpeciesCluster(SequenceCluster):
 
     def __init__(self, sequences: List[Sequence], centroid: Sequence = None):
@@ -718,6 +719,10 @@ class KingdomCluster(SequenceCluster):
 
 
 class FastaFile:
+
+    # TODO: If there are sequences with duplicate SeqHeaders, but with different sequences,
+    # some methods return inconsistent results (espesially filtering methods). We rely for now
+    # on the fact that SeqHeaders are unique in the fasta file.
 
     def __init__(self, fasta_file_path: pl.Path):
         self.fasta_file_path = fasta_file_path.absolute()
@@ -858,6 +863,19 @@ class FastaFile:
                     seq_ids.append(str(seq_id))
                 curr_line = fasta.readline().strip()
         return seq_ids
+
+    def get_seq_count(self) -> int:
+        """
+        It returns the number of sequences in the fasta file.
+        """
+        seq_count = 0
+        with open(self.fasta_file_path, 'r', encoding='utf-8') as fasta:
+            curr_line = fasta.readline().strip()
+            while curr_line:
+                if curr_line.startswith('>'):
+                    seq_count += 1
+                curr_line = fasta.readline().strip()
+        return seq_count
 
 
 class TaxedFastaFile(FastaFile):
@@ -1002,6 +1020,30 @@ class TaxedFastaFile(FastaFile):
                 seqs += self.filter_seq_by_tax(tax)
         return seqs
 
+    def get_seq_id_tax_map(self) -> Dict[SeqID, Taxonomy]:
+        """
+        It returns a dictionary where keys are SeqID objects and values are Taxonomy objects.
+        """
+        seq_id_tax_map = {}
+        with open(self.fasta_file_path, 'r', encoding='utf-8') as fasta:
+            curr_line = fasta.readline().strip()
+            seq_str = ''
+            seq_header = ''
+            while curr_line:
+                if curr_line.startswith('>'):
+                    if seq_str:
+                        seq_obj = Sequence(seq_header, seq_str)
+                        seq_id_tax_map[seq_obj.header.seq_id] = seq_obj.header.taxonomy
+                        seq_str = ''
+                    seq_header = curr_line
+                else:
+                    seq_str += curr_line
+                curr_line = fasta.readline().strip()
+            if seq_str:
+                seq_obj = Sequence(seq_header, seq_str)
+                seq_id_tax_map[seq_obj.header.seq_id] = seq_obj.header.taxonomy
+        return seq_id_tax_map
+
 
 class TreeNode:
 
@@ -1109,6 +1151,8 @@ class ZOTUTable:
         self.zotu_table_file = pl.Path(zotu_table_file).resolve()
         self.sep = sep
         self.table_df = pd.read_csv(self.zotu_table_file, sep=sep, index_col=0)
+        self.full_tax_zotu_file = self.zotu_table_file
+        self.full_tax_zotu_df = pd.DataFrame()
 
     @property
     def tax_col_ind(self) -> int:
@@ -1181,6 +1225,75 @@ class ZOTUTable:
             assert all(zotu in self.zotus_ids for zotu in zotu_ids)
         total_count = self.table_df.loc[zotu_ids, sampel_ids].sum().sum()
         return int(total_count)
+
+    def update_taxonomy(
+            self,
+            zotu_tax_map: List[Tuple[str, str]] = [],
+            dest_file: pl.Path = None,
+            ) -> Tuple[pd.DataFrame, pl.Path]:
+        """
+        It updates the taxonomy of the zOTUs in the zotu table.
+        :param zotu_tax_map: List of tuples with (taxonomy, zotu_id)
+        :return: pd.DataFrame with updated taxonomy
+        """
+        table_copy = self.table_df.copy()
+        if self.tax_col_ind == -1:
+            # adding a new column for taxonomy
+            table_copy['Taxonomy'] = ''
+        tax_col_ind = table_copy.columns.get_loc('Taxonomy')
+
+        # We place taxonomy for each zotu in the taxonomy column
+        was_in_map = []
+        for zotu_table_row in table_copy.itertuples():
+            zotu_id = zotu_table_row.Index
+            # if the zotu already have a taxonomy, we take it as default
+            zotu_tax = Taxonomy('tax=' + table_copy.loc[zotu_id, 'Taxonomy'])
+            for tax_pair in zotu_tax_map:
+                if tax_pair[0] == zotu_id:
+                    was_in_map.append(zotu_id)
+                    zotu_tax = Taxonomy("tax=" + str(tax_pair[1]))
+                    table_copy.at[zotu_id, table_copy.columns[tax_col_ind]] = zotu_tax.full_tax
+                    break
+        # only keeping the zotus that were in the map
+        if zotu_tax_map and len(was_in_map) > 0:
+            updated_filterd_table = table_copy.loc[was_in_map]
+
+        if isinstance(dest_file, str):
+            dest_file = pl.Path(dest_file).resolve()
+        elif dest_file is not None and not isinstance(dest_file, pl.Path):
+            dest_file = self.zotu_table_file.parent.joinpath(
+                self.zotu_table_file.stem + "_updated_tax.tab"
+            )
+            dest_file = pl.Path(dest_file).resolve()
+            logging.info(
+                "No destination file provided for updated ZOTU"
+                " table file. Using default: %s", dest_file
+            )
+        if dest_file:
+            dest_file = pl.Path(dest_file).resolve()
+            dest_file.parent.mkdir(parents=True, exist_ok=True)
+            if dest_file.exists():
+                logging.info("ZOTU table with updated taxonomy "
+                "already exists at %s. Overwriting it.", dest_file
+                )
+                dest_file.unlink()
+            dest_file.touch()  # create the file if it does not exist
+            updated_filterd_table.to_csv(dest_file, sep=self.sep, index=True)
+        # only when all zotu_ids from the original table are in the map
+        # updated the self attributes
+        if zotu_tax_map and len(was_in_map) == len(self.zotus_ids):
+            self.full_tax_zotu_file = dest_file
+            self.full_tax_zotu_df = updated_filterd_table
+            logging.info("ZOTU table taxonomy updated successfully.")
+        else:
+            logging.warning(
+                "Not all zOTUs were updated with taxonomy. "
+                "Only %d out of %d zOTUs were updated.",
+                len(was_in_map), len(self.zotus_ids)
+            )
+
+        # returning
+        return updated_filterd_table, dest_file
 
 
 class TICUClust:
@@ -1387,6 +1500,8 @@ class TICAnalysis:
     default_sotu_fasta_file_name = "SOTUs-Seq.fasta"
     default_work_dir_name = "TIC-WD"
     default_uclust_work_dir_name = "Uclust-WD"
+    default_zotu_table_bact_file_name = "ZOTU-Table-OnlyBacteria-FullTaxonomy.tab"
+    default_zotu_table_full_tax = "ZOTU-Table-All-FullTaxonomy.tab"
 
     def __init__(
         self,
@@ -1415,6 +1530,8 @@ class TICAnalysis:
         self.gotu_sotu_file_path = self.tic_wd / self.default_gotu_sotu_file_name
         self.sotu_zotu_file_path = self.tic_wd / self.default_sotu_zotu_file_name
         self.tic_output_fasta_path = self.tic_wd / self.default_output_fasta_name
+        self.zotu_table_bact_file = self.tic_wd / self.default_zotu_table_bact_file_name
+        self.zotu_table_full_tax_file = self.tic_wd / self.default_zotu_table_full_tax
         self.sotu_table_path = self.tic_wd / self.default_sotu_table_file_name
         self.sotu_fasta_path = self.tic_wd / self.default_sotu_fasta_file_name
         # creating the lists
@@ -1451,15 +1568,19 @@ class TICAnalysis:
         self.write_fotu_gotu_map_to_file(all_known_genus_fasta_path)
         self.write_gotu_sotu_map_to_file(all_known_species_fasta_path)
         self.write_sotu_zotu_map_to_file(all_known_species_fasta_path)
+        # writing non-bacteria sequences to the output fasta
+        self.append_non_bacteria_seqs(self.non_bact_fasta_path)
         # writing the sotu table to file. Also SOTU to ZOTU map
         if self.zotu_table:
             # We rely on ZOTU table to infer the centroids
             # and the members of the SOTUs
             self.deflate_zotu_table(all_known_species_fasta_path)
+            self.update_zotu_table_taxonomy(
+                all_known_species_fasta_path,
+                self.non_bact_fasta_path
+            )
             # writing the sotu fasta to file
             self.extract_sotu_fasta_file(all_known_species_fasta_path)
-        # writing non-bacteria sequences to the output fasta
-        self.append_non_bacteria_seqs(self.non_bact_fasta_path)
         # deleting the intermediate files
         all_known_order_fasta_path.unlink()
         all_known_family_fasta_path.unlink()
@@ -1783,7 +1904,9 @@ class TICAnalysis:
         return taxed_fasta_obj.get_map_to_parent('genus', 'species')
 
     @staticmethod
-    def get_sotu_zotu_map(taxed_fasta_path: pl.Path) -> List[Tuple[str, str]]:
+    def get_sotu_zotu_map(
+        taxed_fasta_path: pl.Path,
+        complete_sotu_tax: bool = False) -> List[Tuple[str, str]]:
         """
         Given a fasta file path, it returns a list of tuples of SOTU and ZOTU.
         NOTE if value at species level is not uniuqe, in the whole taxonomic
@@ -1798,7 +1921,12 @@ class TICAnalysis:
                 if curr_line.startswith('>'):
                     seq_header = SeqHeader(curr_line)
                     if seq_header.taxonomy.is_known_upto('species'):
-                        map_set.add((str(seq_header.taxonomy.species), str(seq_header.seq_id)))
+                        sotu = seq_header.taxonomy.species
+                        sotu_comp_tax = sotu
+                        if complete_sotu_tax:
+                            sotu_comp_tax = ";".join(seq_header.taxonomy.tax_list[:7])
+
+                        map_set.add((str(sotu_comp_tax), str(seq_header.seq_id)))
                     else:
                         logging.warning(
                             "Sequence %s is not known upto species level."\
@@ -1903,6 +2031,47 @@ class TICAnalysis:
             sotu_df.to_csv(self.sotu_table_path, sep='\t', index=False)
         else:
             logging.warning("No SOTUs found. The SOTU table won't be generated.")
+
+        return None
+
+    def update_zotu_table_taxonomy(
+        self,
+        known_species_fasta: pl.Path,
+        non_bact_fasta: pl.Path
+        ) -> None:
+        """
+        It updates the ZOTU table with the taxonomy of the SOTUs.
+        """
+        if self.zotu_table is None or not known_species_fasta.is_file():
+            logging.info(
+                "ZOTU table or known species fasta file is not provided."
+                " Skipping the ZOTU table taxonomy update."
+            )
+            return None
+        all_known_species_fasta_obj = TaxedFastaFile(known_species_fasta)
+        seq_id_tax_map = all_known_species_fasta_obj.get_seq_id_tax_map()
+        seq_id_str_tax_map = {
+            seq_id.id_str: tax.full_tax for seq_id, tax in seq_id_tax_map.items()
+        }
+        # non_bact_fasta
+        non_bact_fasta = TaxedFastaFile(non_bact_fasta)
+        non_bact_seq_id_tax_map = non_bact_fasta.get_seq_id_tax_map()
+        non_bact_seq_id_str_tax_map = {
+            # NOTE: full_tax forces the taxonomy to 7 levels
+            seq_id.id_str: tax.full_tax for seq_id, tax in non_bact_seq_id_tax_map.items()
+        }
+        # only bacterial ZOTU table
+        self.zotu_table.update_taxonomy(
+            list(seq_id_str_tax_map.items()),
+            self.zotu_table_bact_file
+        )
+        # all zotus with full taxonomy
+        non_bact_seq_id_str_tax_map.update(seq_id_str_tax_map)
+        self.zotu_table.update_taxonomy(
+            list(non_bact_seq_id_str_tax_map.items()),
+            self.zotu_table_full_tax_file
+        )
+        return None
 
     def extract_sotu_fasta_file(
         self,
