@@ -1284,12 +1284,11 @@ class ZOTUTable:
             self.full_tax_zotu_file = dest_file
             self.full_tax_zotu_df = updated_filterd_table
             ticlust_logger.info("ZOTU table taxonomy updated successfully.")
-        else:
-            ticlust_logger.warning(
-                "Not all zOTUs were updated with taxonomy. "
-                "Only %d out of %d zOTUs were updated.",
-                len(was_in_map), len(self.zotus_ids)
-            )
+
+        ticlust_logger.warning(
+            "%d zOTUs' taxonomies were updated.",
+            len(was_in_map)
+        )
 
         # returning
         return updated_filterd_table, dest_file
@@ -1561,7 +1560,10 @@ class TICAnalysis:
         self.threads = threads
         if cluster_thresholds_d:
             self.cluster_thresholds.update(cluster_thresholds_d)
-        ticlust_logger.debug("Running TIC with the following thresholds: %s", self.cluster_thresholds)
+        ticlust_logger.debug(
+            "Running TIC with the following thresholds: %s",
+            self.cluster_thresholds
+        )
         all_known_order_fasta_path = self.fill_upto_order()
         all_known_family_fasta_path = self.complete_family_level(all_known_order_fasta_path)
         all_known_genus_fasta_path = self.complete_genus_level(all_known_family_fasta_path)
@@ -1987,7 +1989,10 @@ class TICAnalysis:
          SOTU, (centroid ZOTU, counts, taxonomy)
         """
         if self.zotu_table is None:
-            ticlust_logger.warning("ZOTU table is not provided. Skipping the SOTU table generation.")
+            ticlust_logger.warning(
+                "ZOTU table is not provided."
+                "Skipping the SOTU table generation."
+            )
             return {}
 
         known_species_fasta = pl.Path(known_species_fasta).resolve()
