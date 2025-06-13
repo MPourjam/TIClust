@@ -1,3 +1,9 @@
+# Version 1.0.7
+
+- Taxonomies in ZOTU table, if given, will be updated and written to the output directories
+  - `ZOTU-Table-All-FullTaxonomy.tab`: A version of given ZOTU table with full taxonomy (7 levels) for all ZOTUs.
+  - `ZOTU-Table-OnlyBacteria-FullTaxonomy.tab`: A version of given ZOTU table with full taxonomy (7 levels) for only Bacteria ZOTUs.
+
 # Version 1.0.6
 
 - TICAnalysis will take a logger object to replace with default logger.
