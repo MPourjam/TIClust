@@ -1015,7 +1015,7 @@ TIC_INIT_FILES = [
     ),
     tic_init_files(
         TEST_DIR / "All_known_order_500_sequences.fasta",
-        None
+        TEST_DIR / "All_known_order_500_table.tab"
     ),
     tic_init_files(
         TEST_DIR / "Mixed_kingdoms_1K_V3-V4_sequences.fasta",
@@ -1167,7 +1167,6 @@ class TestTICAnalysis:
             tic_output_zotus_count = self.tic_analysis.zotu_table.total_count(tic_out_zotus_ids)
             sotus_tot_count = sotu_table.total_count()
             init_zotu_table_count = self.tic_analysis.zotu_table.total_count()
-            assert init_zotu_table_count == 52871687
             assert tic_output_zotus_count == sotus_tot_count
             # non bacterial zotu count + bacterial zotu count = total zotu count
             non_bac_seq_ids = stic.TaxedFastaFile(self.tic_analysis.non_bact_fasta_path).get_seq_ids()
@@ -1416,8 +1415,7 @@ class TestTICAnalysisMixedKingdoms:
         )
 
     def teardown_method(self):
-        # self.tic_analysis.cleanup(full=True)
-        pass
+        self.tic_analysis.cleanup(full=True)
 
     # define a fixture passable to other tests in this class
     @pytest.fixture

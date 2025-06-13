@@ -1498,8 +1498,8 @@ class TICAnalysis:
     default_sotu_fasta_file_name = "SOTUs-Seq.fasta"
     default_work_dir_name = "TIC-WD"
     default_uclust_work_dir_name = "Uclust-WD"
-    default_zotu_table_bact_file_name = "ZOTU-Table-OnlyBacteria-FullTaxonomy.tab"
-    default_zotu_table_full_tax = "ZOTU-Table-All-FullTaxonomy.tab"
+    default_zotu_table_bact_file_name = "ZOTUs-Table-OnlyBacteria-FullTaxonomy.tab"
+    default_zotu_table_full_tax = "ZOTUs-Table-All-FullTaxonomy.tab"
 
     def __init__(
             self,
@@ -1536,6 +1536,15 @@ class TICAnalysis:
         self.zotu_table_full_tax_file = self.tic_wd / self.default_zotu_table_full_tax
         self.sotu_table_path = self.tic_wd / self.default_sotu_table_file_name
         self.sotu_fasta_path = self.tic_wd / self.default_sotu_fasta_file_name
+        if self.zotu_table_file and \
+            self.zotu_table_file.exists() \
+            and self.zotu_table_file.is_file():
+            zotu_table_file_stem = self.zotu_table_file.stem
+            zotu_table_bact_file = zotu_table_file_stem + "_OnlyBacteria-FullTaxonomy.tab"
+            self.zotu_table_bact_file = self.tic_wd / zotu_table_bact_file
+            zotu_table_full_tax_file = zotu_table_file_stem + "_All-FullTaxonomy.tab"
+            self.zotu_table_full_tax_file = self.tic_wd / zotu_table_full_tax_file
+
         # creating the lists
         self.fotu_gotu_list: List[Tuple[str, str]] = []
         self.gotu_sotu_list: List[Tuple[str, str]] = []
@@ -2073,11 +2082,12 @@ class TICAnalysis:
             self.zotu_table_bact_file
         )
         # all zotus with full taxonomy
-        non_bact_seq_id_str_tax_map.update(seq_id_str_tax_map)
-        self.zotu_table.update_taxonomy(
-            list(non_bact_seq_id_str_tax_map.items()),
-            self.zotu_table_full_tax_file
-        )
+        if len(non_bact_seq_id_str_tax_map) > 0:
+            non_bact_seq_id_str_tax_map.update(seq_id_str_tax_map)
+            self.zotu_table.update_taxonomy(
+                list(non_bact_seq_id_str_tax_map.items()),
+                self.zotu_table_full_tax_file
+            )
         return None
 
     def extract_sotu_fasta_file(
