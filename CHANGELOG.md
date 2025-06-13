@@ -1,3 +1,9 @@
+# Version 1.0.8
+
+- `*-All-FullTaxonomy.tab` files will be created only if there are non-bacterial ZOTUs in the input ZOTU table.
+- Full-Taxonomy ZOTUs tables file names will have the original ZOTU table name as a prefix.
+  
+
 # Version 1.0.7
 
 - Taxonomies in ZOTU table, if given, will be updated and written to the output directories
