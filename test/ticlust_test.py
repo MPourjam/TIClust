@@ -831,13 +831,14 @@ class TestFastaFile:
 class TestTaxedFastaFile:
 
     def setup_method(self):
-        self.fasta_content = """>seq1 tax=kingdom;phylum;class;order;family;genus;species;
+        self.fasta_content = """\
+        >seq1 tax=kingdom;phylum;class;order;family;genus;species;
         ATCGATCGATCG
         >seq2 tax=kingdom;phylum;class;order;family;genus;species;
         GCTAGCTAGCTA
-        >seq3 tax=kingdom;phylum;class;order;family;genus;species;
+        >seq3 tax=kingdom;phylum;class;order;
         CGTACGTACGTA
-        >seq4 tax=kingdom;phylum;class;order;family;genus;species;
+        >seq4 tax=kingdom;phylum;class;order;family;
         TACGTACGTACG
         """
         self.fasta_file_path = pl.Path("test_taxed_fasta_file.fasta")
@@ -854,7 +855,7 @@ class TestTaxedFastaFile:
         assert len(tax_obj_list) == 4
         tax_obj_set = self.taxed_fasta_file.tax_obj_set
         assert isinstance(tax_obj_set, set)
-        assert len(tax_obj_set) == 1
+        assert len(tax_obj_set) == 3  # seq3 and seq4 have incomplete taxa
         for tax in tax_obj_set:
             assert isinstance(tax, stic.Taxonomy)
 
@@ -865,7 +866,7 @@ class TestTaxedFastaFile:
         assert isinstance(sequences, list)
         assert all([seq.header.taxonomy == taxonomy for seq in sequences])
         assert all([isinstance(seq, stic.Sequence) for seq in sequences])
-        assert len(sequences) == 4
+        assert len(sequences) == 2
         for seq in sequences:
             assert isinstance(seq, stic.Sequence)
             assert seq.header.taxonomy == taxonomy
@@ -873,7 +874,7 @@ class TestTaxedFastaFile:
     def test_get_tax_seq_map(self):
         tax_seq_map = self.taxed_fasta_file.get_tax_seq_map()
         assert isinstance(tax_seq_map, dict)
-        assert len(tax_seq_map) == 1  # All taxa are the same
+        assert len(tax_seq_map) == 3  # 3 unique taxonomies
         for key, value in tax_seq_map.items():
             assert isinstance(key, stic.Taxonomy)
             assert isinstance(value, list)
@@ -887,6 +888,22 @@ class TestTaxedFastaFile:
         for tax in taxonomies:
             assert isinstance(tax, stic.Taxonomy)
             assert tax.last_known_level == 'species'
+    
+    def test_get_seq_id_tax_map(self):
+        seq_id_tax_map = self.taxed_fasta_file.get_seq_id_tax_map()
+        assert isinstance(seq_id_tax_map, dict)
+        assert len(seq_id_tax_map) == 4
+        for seq_id, tax in seq_id_tax_map.items():
+            assert isinstance(seq_id, stic.SeqID)
+            assert isinstance(seq_id.id_str, str)
+            assert seq_id.id_str.startswith("seq")
+            assert isinstance(tax, stic.Taxonomy)
+            if seq_id.id_str == "seq3":
+                assert tax.last_known_level == "order"
+            if seq_id.id_str == "seq4":
+                assert tax.last_known_level == "family"
+            if seq_id.id_str in ["seq1", "seq2"]:
+                assert tax.last_known_level == "species"
 
 
 class TestTICUClust:
@@ -993,9 +1010,13 @@ tic_init_files = nt(
 
 TIC_INIT_FILES = [
     tic_init_files(
-        TEST_DIR / "Minor_pseudo_sequences.fasta", None),
+        TEST_DIR / "Minor_pseudo_sequences.fasta",
+        None
+    ),
     tic_init_files(
-        TEST_DIR / "All_known_order_500_sequences.fasta", None),
+        TEST_DIR / "All_known_order_500_sequences.fasta",
+        None
+    ),
     tic_init_files(
         TEST_DIR / "Mixed_kingdoms_1K_V3-V4_sequences.fasta",
         TEST_DIR / "Mixed_kingdoms_1K_V3-V4_table.tab"
@@ -1155,6 +1176,32 @@ class TestTICAnalysis:
 
     # TODO merge following two test classes into this class. Use stats TIC_INIT_FILES to check the results cluster counts.
 
+    def test_update_zotu_table_taxonomy(self):
+        tic_analysis = self.tic_analysis
+        if tic_analysis.zotu_table is None:
+            assert tic_analysis.update_zotu_table_taxonomy(
+                tic_analysis.tic_output_fasta_path,
+                tic_analysis.non_bact_fasta_path
+                ) is None
+        else:
+            tic_analysis.update_zotu_table_taxonomy(
+                tic_analysis.tic_output_fasta_path,
+                tic_analysis.non_bact_fasta_path
+                )
+            # number of sequences in tic_analysis.zotu_table_bact_file == number of tic_analysis.tic_output_fasta_path 
+            tic_out_fasta = stic.TaxedFastaFile(tic_analysis.tic_output_fasta_path)
+            tic_non_bact_fasta = stic.TaxedFastaFile(tic_analysis.non_bact_fasta_path)
+            comp_tax_zotu_table_file = tic_analysis.zotu_table_bact_file
+            full_tax_bac_zotu_table = stic.ZOTUTable(comp_tax_zotu_table_file)
+            tic_all_zotus_full_tax_df = tic_analysis.zotu_table.full_tax_zotu_df
+            assert tic_out_fasta.get_seq_count() == full_tax_bac_zotu_table.table_df.shape[0]
+            assert set(list(tic_out_fasta.get_seq_ids())) == set(full_tax_bac_zotu_table.zotus_ids)
+            assert full_tax_bac_zotu_table.table_df.shape[0] == tic_out_fasta.get_seq_count()
+            # full_tax_bac_zotu_df will only exist if update_taxonomy could updated all zotus' taxonomy
+            assert tic_analysis.fasta_file.get_seq_count() == tic_analysis.zotu_table.full_tax_zotu_df.shape[0]
+            assert tic_non_bact_fasta.get_seq_count() + tic_out_fasta.get_seq_count() == len(tic_analysis.zotu_table.zotus_ids)
+            assert tic_all_zotus_full_tax_df.shape[0] == tic_non_bact_fasta.get_seq_count() + tic_out_fasta.get_seq_count()
+
 
 @pytest.mark.minor_test
 class TestTICAnalysisSmall:
@@ -1264,7 +1311,7 @@ class TestTICAnalysisAllKnownOrder:
         taxonomies = self.tic_analysis.filter_tax_set_at_last_known_level(level)
         assert isinstance(taxonomies, list)
         if level == "order":
-            print(taxonomies)
+            # print(taxonomies)
             assert len(taxonomies) == 1  # All taxa are at the species level
         for tax in taxonomies:
             assert isinstance(tax, stic.Taxonomy)
@@ -1362,10 +1409,15 @@ class TestTICAnalysisMixedKingdoms:
 
     def setup_method(self):
         self.fasta_file_path = TEST_DIR / "Mixed_kingdoms_1K_V3-V4_sequences.fasta"
-        self.tic_analysis = stic.TICAnalysis(self.fasta_file_path)
+        self.zotu_table_file_path = TEST_DIR / "Mixed_kingdoms_1K_V3-V4_table.tab"
+        self.tic_analysis = stic.TICAnalysis(
+            self.fasta_file_path,
+            self.zotu_table_file_path
+        )
 
     def teardown_method(self):
-        self.tic_analysis.cleanup(full=True)
+        # self.tic_analysis.cleanup(full=True)
+        pass
 
     # define a fixture passable to other tests in this class
     @pytest.fixture
@@ -1417,6 +1469,32 @@ class TestTICAnalysisMixedKingdoms:
         with open(fix_complete_species_level, 'r') as f:
             lines = f.readlines()
         assert len(lines) == 1314
+
+    def test_update_zotu_table_taxonomy(self, fix_run):
+        tic_analysis = fix_run
+        if tic_analysis.zotu_table is None:
+            assert tic_analysis.update_zotu_table_taxonomy(
+                tic_analysis.tic_output_fasta_path,
+                tic_analysis.non_bact_fasta_path
+                ) is None
+        else:
+            tic_analysis.update_zotu_table_taxonomy(
+                tic_analysis.tic_output_fasta_path,
+                tic_analysis.non_bact_fasta_path
+                )
+            # number of sequences in tic_analysis.zotu_table_bact_file == number of tic_analysis.tic_output_fasta_path 
+            tic_out_fasta = stic.TaxedFastaFile(tic_analysis.tic_output_fasta_path)
+            tic_non_bact_fasta = stic.TaxedFastaFile(tic_analysis.non_bact_fasta_path)
+            comp_tax_zotu_table_file = tic_analysis.zotu_table_bact_file
+            full_tax_bac_zotu_table = stic.ZOTUTable(comp_tax_zotu_table_file)
+            tic_all_zotus_full_tax_df = tic_analysis.zotu_table.full_tax_zotu_df
+            assert tic_out_fasta.get_seq_count() == full_tax_bac_zotu_table.table_df.shape[0]
+            assert set(list(tic_out_fasta.get_seq_ids())) == set(full_tax_bac_zotu_table.zotus_ids)
+            assert full_tax_bac_zotu_table.table_df.shape[0] == tic_out_fasta.get_seq_count()
+            # full_tax_bac_zotu_df will only exist if update_taxonomy could updated all zotus' taxonomy
+            assert tic_analysis.fasta_file.get_seq_count() == tic_analysis.zotu_table.full_tax_zotu_df.shape[0]
+            assert tic_non_bact_fasta.get_seq_count() + tic_out_fasta.get_seq_count() == len(tic_analysis.zotu_table.zotus_ids)
+            assert tic_all_zotus_full_tax_df.shape[0] == tic_non_bact_fasta.get_seq_count() + tic_out_fasta.get_seq_count()
 
 
 class TestZOTUTable:
