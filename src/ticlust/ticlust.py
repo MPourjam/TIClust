@@ -1285,8 +1285,8 @@ class ZOTUTable:
             self.full_tax_zotu_df = updated_filterd_table
             ticlust_logger.info("ZOTU table taxonomy updated successfully.")
 
-        ticlust_logger.warning(
-            "%d zOTUs' taxonomies were updated.",
+        ticlust_logger.info(
+            "%d ZOTUs' taxonomies were updated.",
             len(was_in_map)
         )
 
