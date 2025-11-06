@@ -1,3 +1,8 @@
+# Version 1.0.9
+
+- edge taxonomy cases like "tax=;;", "tax=tax=Bacteria;;;Firmicutes;;", and "Zotu111 Bacteria;;;Firmicutes;;" are handled safely
+
+
 # Version 1.0.8
 
 - `*-All-FullTaxonomy.tab` files will be created only if there are non-bacterial ZOTUs in the input ZOTU table.
