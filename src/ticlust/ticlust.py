@@ -1374,7 +1374,7 @@ class TICUClust:
         :return: dict
         """
         uc_file = pl.Path(pl.PurePath(uc_file)).absolute()
-        tax_reg = re.compile(r"\s(?P<tax_tag>tax=)?(?P<tax>([^;]+;)*([^;]+)?;?)", re.IGNORECASE)
+        tax_reg = re.compile(r"\s+(?P<tax_tag>tax=)?(?P<tax>(?:[^;\t]*(?:;|$))+)", re.IGNORECASE)
 
         uc_dict = {}
         with open(uc_file, 'r', encoding='utf-8') as uc_h:
